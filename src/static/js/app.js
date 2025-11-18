@@ -1,3 +1,11 @@
+/**
+ * YouTube Downloader - Client Side Application
+ * 
+ * @author Pool Anthony Deza Millones
+ * @github @iPool23
+ * @version 1.0.0
+ */
+
 let selectedFormat = 'mp4';
 
 // Manejo de botones de formato

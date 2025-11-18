@@ -1,4 +1,9 @@
-"""Punto de entrada de la aplicación"""
+"""
+Punto de entrada de la aplicación
+
+Autor: Pool Anthony Deza Millones
+GitHub: @iPool23
+"""
 import uvicorn
 import webbrowser
 import threading

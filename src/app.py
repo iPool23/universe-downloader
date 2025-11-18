@@ -1,4 +1,9 @@
-"""Aplicación principal FastAPI"""
+"""
+Aplicación principal FastAPI
+
+Autor: Pool Anthony Deza Millones
+GitHub: @iPool23
+"""
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
