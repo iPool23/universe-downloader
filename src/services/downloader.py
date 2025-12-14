@@ -19,16 +19,21 @@ class DownloaderService:
             # Añadir a PATH para asegurar que yt-dlp lo encuentre
             os.environ["PATH"] += os.pathsep + self.ffmpeg_path
 
-    def _parse_time(self, time_str: str) -> int:
+    def _parse_time(self, time_str: str) -> float:
         """Convierte string de tiempo (HH:MM:SS o MM:SS) a segundos"""
         if not time_str:
             return 0
-        parts = list(map(int, time_str.split(':')))
-        if len(parts) == 3:
-            return parts[0] * 3600 + parts[1] * 60 + parts[2]
-        elif len(parts) == 2:
-            return parts[0] * 60 + parts[1]
-        return 0
+        try:
+            parts = list(map(float, time_str.split(':')))
+            if len(parts) == 3:
+                return parts[0] * 3600 + parts[1] * 60 + parts[2]
+            elif len(parts) == 2:
+                return parts[0] * 60 + parts[1]
+            elif len(parts) == 1:
+                return parts[0]
+            return 0
+        except ValueError:
+            return 0
 
     def get_video_info(self, url: str) -> Dict:
         """Obtiene información del video sin descargar"""
@@ -110,9 +115,8 @@ class DownloaderService:
                 return [{'start_time': start_sec, 'end_time': end_sec}]
                 
             ydl_opts['download_ranges'] = download_range_func
-            # Force external downloader for better cutting precision if ffmpeg is available
-            # But yt-dlp native cutting is usually fine with 'download_ranges'
-            # Note: For strict cutting, adding 'force_keyframes_at_cuts': True might be needed but requires re-encoding.
+            # Force re-encoding at cuts for precision and broad compatibility (fixes Facebook/others)
+            ydl_opts['force_keyframes_at_cuts'] = True
         
         # Descargar
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

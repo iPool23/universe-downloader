@@ -17,7 +17,7 @@ from src.config import DOWNLOADS_DIR
 
 # Crear aplicación
 app = FastAPI(
-    title="YouTube Downloader",
+    title="Universe Downloader API",
     description="API para descargar videos y audio de YouTube",
     version="1.0.0"
 )

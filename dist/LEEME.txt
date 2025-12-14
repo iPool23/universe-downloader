@@ -1,14 +1,14 @@
 
 ╔══════════════════════════════════════════════════════════╗
-║          YOUTUBE DOWNLOADER - INSTRUCCIONES              ║
+║          UNIVERSE DOWNLOADER - INSTRUCCIONES             ║
 ╚══════════════════════════════════════════════════════════╝
 
 📦 CONTENIDO DEL PAQUETE:
-   • YouTubeDownloader.exe - Aplicación principal
+   • UniverseDownloader.exe - Aplicación principal
 
 🚀 CÓMO USAR:
 
-   1. Ejecuta "YouTubeDownloader.exe"
+   1. Ejecuta "UniverseDownloader.exe"
    
    2. Se abrirá automáticamente tu navegador en:
       http://127.0.0.1:8000

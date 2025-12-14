@@ -163,6 +163,12 @@ async function scanVideo() {
 
         const data = await response.json();
 
+        // Determine start placeholder based on duration format
+        const formattedDuration = formatTime(data.duration);
+        const hasHours = formattedDuration.split(':').length === 3;
+        const startPlaceholder = hasHours ? "00:00:00" : "00:00";
+        const timeLabel = hasHours ? "(H:MM:SS)" : "(MM:SS)";
+
         videoInfo.innerHTML = `
                 <div class="video-details">
                 <div class="thumb-container">
@@ -170,20 +176,20 @@ async function scanVideo() {
                 </div>
                 <div class="video-meta">
                     <h3 title="${data.title}">${data.title}</h3>
-                    <p><i data-lucide="clock" style="width: 14px;"></i> ${formatTime(data.duration)}</p>
+                    <p><i data-lucide="clock" style="width: 14px;"></i> ${formattedDuration}</p>
                 </div>
             </div >
                 <div class="time-range-container">
                     <span class="time-range-label"><i data-lucide="scissors" style="width: 14px;"></i> Recortar (Opcional):</span>
                     <div class="time-inputs">
                         <div class="time-input-group">
-                            <label>Inicio (MM:SS)</label>
-                            <input type="text" id="startTime" placeholder="00:00" />
+                            <label>Inicio ${timeLabel}</label>
+                            <input type="text" id="startTime" placeholder="${startPlaceholder}" onblur="formatTimeInput(this)" />
                         </div>
                         <span class="arrow-icon"><i data-lucide="arrow-right"></i></span>
                         <div class="time-input-group">
-                            <label>Fin (MM:SS)</label>
-                            <input type="text" id="endTime" placeholder="${formatTime(data.duration)}" />
+                            <label>Fin ${timeLabel}</label>
+                            <input type="text" id="endTime" placeholder="${formattedDuration}" onblur="formatTimeInput(this)" />
                         </div>
                     </div>
                 </div>
@@ -200,15 +206,34 @@ async function scanVideo() {
     }
 }
 
+function formatTimeInput(input) {
+    let value = input.value.trim();
+    if (!value) return;
+
+    // Check if it's just seconds (numeric)
+    if (/^\d+$/.test(value)) {
+        const seconds = parseInt(value, 10);
+        input.value = formatTime(seconds).trim(); // Reuse existing formatTime
+        return;
+    }
+
+    // Check if colon format but ensure padding (e.g. 1:5 -> 01:05)
+    if (value.includes(':')) {
+        const parts = value.split(':');
+        // Pad all parts to 2 digits
+        input.value = parts.map(p => p.padStart(2, '0')).join(':');
+    }
+}
+
 function formatTime(seconds) {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
+    const s = Math.floor(seconds % 60);
 
     if (h > 0) {
         return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     }
-    return `${m}:${s.toString().padStart(2, '0')}`;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
 async function download() {

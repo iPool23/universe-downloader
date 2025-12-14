@@ -7,13 +7,13 @@ from pathlib import Path
 import shutil
 
 print("=" * 60)
-print("CREANDO PAQUETE DE DISTRIBUCIÓN")
+print("CREANDO PAQUETE DE DISTRIBUCIÓN (UNIVERSE)")
 print("=" * 60)
 
 # Verificar que existe el ejecutable
-exe_path = Path("dist/YouTubeDownloader.exe")
+exe_path = Path("dist/UniverseDownloader.exe")
 if not exe_path.exists():
-    print("✗ Error: No se encontró YouTubeDownloader.exe")
+    print("✗ Error: No se encontró UniverseDownloader.exe")
     print("  Ejecuta primero: python build.py")
     exit(1)
 
@@ -25,12 +25,21 @@ release_folder.mkdir()
 
 print("\n[1/3] Copiando archivos...")
 # Copiar ejecutable
-shutil.copy("dist/YouTubeDownloader.exe", release_folder / "YouTubeDownloader.exe")
-print("✓ YouTubeDownloader.exe")
+shutil.copy("dist/UniverseDownloader.exe", release_folder / "UniverseDownloader.exe")
+print("✓ UniverseDownloader.exe")
 
 # Copiar README
 shutil.copy("dist/LEEME.txt", release_folder / "LEEME.txt")
 print("✓ LEEME.txt")
+
+# Copiar carpeta bin (ffmpeg) para portabilidad
+if Path("bin").exists():
+    if (release_folder / "bin").exists():
+        shutil.rmtree(release_folder / "bin")
+    shutil.copytree("bin", release_folder / "bin")
+    print("✓ Carpeta bin (FFmpeg incluido)")
+else:
+    print("! Advertencia: Carpeta bin no encontrada. FFmpeg no se incluirá.")
 
 # Crear carpeta downloads vacía
 (release_folder / "downloads").mkdir()
@@ -38,11 +47,11 @@ print("✓ Carpeta downloads")
 
 # Crear archivo de versión
 version_info = """
-YouTube Downloader v1.0
+Universe Downloader v1.0
 =======================
 
 Características:
-• Descarga videos de YouTube en MP4 (hasta 4K)
+• Descarga videos de YouTube, Facebook, Tiktok en MP4
 • Descarga audio en M4A de alta calidad
 • Interfaz web moderna y fácil de usar
 • No requiere instalación de Python
@@ -64,7 +73,7 @@ with open(release_folder / "VERSION.txt", "w", encoding="utf-8") as f:
 print("✓ VERSION.txt")
 
 print("\n[2/3] Creando archivo ZIP...")
-zip_name = "YouTubeDownloader_v1.0_Windows.zip"
+zip_name = "UniverseDownloader_v1.0_Windows.zip"
 with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
     for root, dirs, files in os.walk(release_folder):
         for file in files:
@@ -93,7 +102,7 @@ print(f"\n📦 Archivo: {zip_name}")
 print(f"📊 Tamaño ZIP: {zip_size:.2f} MB")
 print(f"📊 Tamaño EXE: {exe_size:.2f} MB")
 print("\n📁 Contenido del paquete:")
-print("   • YouTubeDownloader.exe - Aplicación principal")
+print("   • UniverseDownloader.exe - Aplicación principal")
 print("   • LEEME.txt - Instrucciones de uso")
 print("   • VERSION.txt - Información de versión")
 print("   • downloads/ - Carpeta para descargas")

@@ -4,10 +4,13 @@
 block_cipher = None
 
 a = Analysis(
-    ['src/youtubedpl.py'],
+    ['src/main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('src/views', 'src/views'),
+        ('src/static', 'src/static'),
+    ],
     hiddenimports=[
         'uvicorn.logging',
         'uvicorn.loops',
@@ -42,7 +45,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='YouTubeDownloader',
+    name='UniverseDownloader',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

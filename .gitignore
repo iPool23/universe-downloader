@@ -48,3 +48,6 @@ downloads/*.mp3
 # Binaries
 bin/
 *.exe
+*.zip
+dist/
+release/
