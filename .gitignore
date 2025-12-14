@@ -44,3 +44,7 @@ downloads/*.mp3
 
 # Logs
 *.log
+
+# Binaries
+bin/
+*.exe

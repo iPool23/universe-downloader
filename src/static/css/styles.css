@@ -1,9 +1,9 @@
 /**
- * YouTube Downloader - Styles
+ * YouTube Downloader - Modern Dashboard Styles
  * 
  * @author Pool Anthony Deza Millones
  * @github @iPool23
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 * {
@@ -13,197 +13,610 @@
 }
 
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    /* Maintain requested background gradient */
     background: linear-gradient(135deg, #4403E8 0%, #EB0058 100%);
     min-height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 20px;
+    overflow: hidden; /* App-like feel */
+    color: #333;
 }
 
-.container {
+/* --- Dashboard Layout --- */
+.dashboard-wrapper {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    height: 94vh;
+    width: 96vw;
+    margin: 3vh auto;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(20px);
+    border-radius: 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    overflow: hidden;
+}
+
+/* --- Sidebar --- */
+.sidebar {
+    background: rgba(255, 255, 255, 0.5);
+    border-right: 1px solid rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+    padding: 25px;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 40px;
+}
+
+.logo-icon {
+    font-size: 24px;
+}
+
+.brand h2 {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: #111;
+}
+
+.nav-menu {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    text-decoration: none;
+    color: #666;
+    font-weight: 500;
+    border-radius: 12px;
+    transition: all 0.2s ease;
+}
+
+.nav-item:hover {
+    background: rgba(0,0,0,0.04);
+    color: #111;
+}
+
+.nav-item.active {
+    background: #4403E8;
+    color: white;
+    box-shadow: 0 4px 15px rgba(68, 3, 232, 0.3);
+}
+
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(0,0,0,0.05);
+}
+
+.avatar {
+    width: 40px;
+    height: 40px;
+    background: #EB0058;
+    color: white;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+}
+
+.user-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.user-info .name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+}
+
+.user-info .status {
+    font-size: 11px;
+    color: #888;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+/* --- Main Content --- */
+.main-content {
+    padding: 40px;
+    overflow-y: auto;
+    background: #fafafa; /* Subtle contrast */
+}
+
+.top-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 40px;
+}
+
+.top-header h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #111;
+}
+
+.status-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: #e6f7ed;
+    color: #00a854;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* --- Content Card (Downloader) --- */
+.content-card {
     background: white;
     padding: 40px;
     border-radius: 20px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-    max-width: 500px;
-    width: 100%;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+    max-width: 800px;
+    margin: 0 auto;
 }
 
-h1 {
-    color: #333;
-    margin-bottom: 10px;
-    text-align: center;
-}
-
-.subtitle {
-    color: #666;
-    text-align: center;
+.card-header {
     margin-bottom: 30px;
-    font-size: 14px;
+    text-align: left;
 }
 
+.card-header h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.card-header p {
+    color: #888;
+}
+
+/* --- Updates to Existing Elements for Dashboard Context --- */
 .input-group {
-    margin-bottom: 20px;
+    margin-bottom: 25px;
 }
 
 label {
     display: block;
-    margin-bottom: 8px;
-    color: #555;
+    margin-bottom: 10px;
+    color: #444;
     font-weight: 600;
+    font-size: 14px;
+}
+
+.url-input-container {
+    display: flex;
+    gap: 12px;
 }
 
 input[type="text"] {
     width: 100%;
-    padding: 12px;
-    border: 2px solid #e0e0e0;
-    border-radius: 8px;
-    font-size: 16px;
-    transition: border-color 0.3s;
+    padding: 14px 16px;
+    border: 2px solid #f0f0f0;
+    border-radius: 12px;
+    font-size: 15px;
+    transition: all 0.3s;
+    background: #fdfdfd;
 }
 
 input[type="text"]:focus {
     outline: none;
-    border-color: #667eea;
+    border-color: #4403E8;
+    background: white;
+    box-shadow: 0 0 0 3px rgba(68, 3, 232, 0.1);
+}
+
+.scan-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 24px;
+    border-radius: 12px;
+    height: 52px; /* Match input height roughly */
 }
 
 .format-buttons {
     display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
+    gap: 15px;
 }
 
 .format-btn {
+    padding: 16px;
+    border: 2px solid #f0f0f0;
+    border-radius: 12px;
     flex: 1;
-    padding: 12px;
-    border: 2px solid #e0e0e0;
-    background: white;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 16px;
     font-weight: 600;
-    transition: all 0.3s;
+    color: #555;
+    background: white;
+    transition: all 0.2s;
 }
 
 .format-btn:hover {
-    background: #f5f5f5;
+    border-color: #ddd;
+    background: #fbfbfb;
 }
 
 .format-btn.active {
-    background: #667eea;
-    color: white;
-    border-color: #667eea;
+    border-color: #4403E8;
+    background: rgba(68, 3, 232, 0.05);
+    color: #4403E8;
 }
 
 .download-btn {
     width: 100%;
-    padding: 15px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 18px;
+    background: #111; /* Modern Dark button */
     color: white;
-    border: none;
-    border-radius: 8px;
-    font-size: 18px;
+    border-radius: 14px;
+    font-size: 16px;
     font-weight: 600;
-    cursor: pointer;
-    transition: transform 0.2s;
+    margin-top: 20px;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
 }
 
 .download-btn:hover {
     transform: translateY(-2px);
+    box-shadow: 0 15px 40px rgba(0,0,0,0.25);
+    background: #000;
 }
 
-.download-btn:disabled {
-    background: #ccc;
-    cursor: not-allowed;
-    transform: none;
+/* --- Video Info Card (Within Dashboard) --- */
+.video-info {
+    background: #f8f9fa;
+    border: 1px solid #eee;
+    padding: 20px;
+    border-radius: 14px;
+    margin-bottom: 25px;
 }
 
+.video-details {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+    align-items: flex-start;
+}
+
+.thumb-container {
+    width: 160px; /* Fixed width for desktop */
+    flex-shrink: 0;
+}
+
+.video-thumb {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    object-fit: cover;
+    background-color: #ddd;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    display: block;
+}
+
+/* --- Buttons Cursor Fix --- */
+button, .scan-btn, .format-btn, .download-btn, .nav-item, .modal-btn {
+    cursor: pointer;
+}
+
+/* --- Video Meta Fix (Title Visibility) --- */
+.video-meta {
+    flex: 1;
+    min-width: 0; /* Critical for flex child truncation */
+    display: flex;
+    flex-direction: column;
+    justify-content: center; /* Center vertically if title is short */
+}
+
+.video-meta h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #333;
+    line-height: 1.4;
+    
+    /* Ensure title is visible and breaks words if needed */
+    white-space: normal;
+    overflow: visible; 
+    display: flex;
+    align-items: center;
+}
+
+/* --- Icon Alignment Fix --- */
+.video-meta p {
+    font-size: 13px;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 6px; /* Slightly increased gap */
+}
+
+/* --- Format Buttons Alignment --- */
+.format-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.time-range-container {
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+}
+
+.time-inputs {
+    display: flex;
+    align-items: flex-end; /* Align inputs to bottom */
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.time-input-group {
+    flex: 1;
+}
+
+.time-input-group label {
+    font-size: 12px;
+    margin-bottom: 5px;
+    color: #666;
+}
+
+/* ... existing logic for modal ... */
+/* ... existing logic for modal ... */
 .modal-overlay {
-    display: none;
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(5px);
     z-index: 1000;
-    justify-content: center;
+    display: none;
     align-items: center;
+    justify-content: center;
 }
 
 .modal-overlay.show {
     display: flex;
+    animation: fadeIn 0.2s ease-out;
 }
 
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
 .modal {
-    background: white;
-    padding: 30px;
-    border-radius: 15px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-    text-align: center;
-    max-width: 400px;
-    animation: slideIn 0.3s ease;
+    border-radius: 20px;
+    padding: 40px;
 }
-
-@keyframes slideIn {
-    from {
-        transform: translateY(-50px);
-        opacity: 0;
-    }
-    to {
-        transform: translateY(0);
-        opacity: 1;
-    }
-}
-
-.modal-icon {
-    font-size: 60px;
-    margin-bottom: 20px;
-}
-
-.modal-title {
-    font-size: 24px;
-    font-weight: 600;
-    color: #333;
-    margin-bottom: 10px;
-}
-
-.modal-message {
-    font-size: 16px;
-    color: #666;
-    margin-bottom: 25px;
-}
-
-.modal-btn {
-    padding: 12px 30px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: transform 0.2s;
-}
-
-.modal-btn:hover {
-    transform: translateY(-2px);
-}
-
 .loading-spinner {
-    display: inline-block;
+    border-top-color: #4403E8;
+}
+
+/* --- Animations --- */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.spin-anim {
+    animation: spin 1s linear infinite;
+}
+
+/* --- Arrow & New Elements --- */
+.arrow-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #888;
+}
+
+/* --- Modal Icons --- */
+.modal-icon {
+    font-size: 0; /* Clear text */
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: center;
+}
+
+.modal-icon.error {
+    color: #dc3545;
+}
+
+.modal-icon.success {
+    color: #28a745;
+}
+
+/* --- Downloads View --- */
+.downloads-list {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.file-item {
+    display: flex;
+    align-items: center;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 12px;
+    border: 1px solid #eee;
+    transition: all 0.2s;
+}
+
+.file-item:hover {
+    border-color: #4403E8;
+    background: white;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.file-icon {
     width: 40px;
     height: 40px;
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid #667eea;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin-bottom: 15px;
+    background: white;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 15px;
+    color: #4403E8;
+    border: 1px solid #eee;
 }
 
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+.file-info {
+    flex: 1;
+}
+
+.file-name {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 4px;
+    color: #333;
+}
+
+.file-meta {
+    font-size: 12px;
+    color: #888;
+    display: flex;
+    gap: 10px;
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+    .dashboard-wrapper {
+        display: flex;
+        flex-direction: column;
+        width: 100vw;
+        height: 100vh;
+        margin: 0;
+        border-radius: 0;
+        overflow-y: auto; /* Allow full page scroll */
+    }
+
+    .sidebar {
+        display: none; /* Hide sidebar on mobile */
+    }
+
+    .main-content {
+        padding: 20px;
+        height: auto;
+        overflow: visible;
+    }
+
+    .content-card {
+        padding: 25px;
+        box-shadow: none; /* Flatter look on mobile */
+    }
+
+    .video-details {
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .thumb-container {
+        width: 100%; /* Full width image on mobile */
+        max-width: 300px; /* But not too huge */
+    }
+    
+    .format-buttons {
+        flex-direction: column;
+    }
+}
+
+/* --- Action Buttons in File List --- */
+.file-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.action-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid #eee;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #555;
+    transition: all 0.2s;
+}
+
+.action-btn:hover {
+    background: #f0f0f0;
+    color: #111;
+    border-color: #ccc;
+}
+
+.action-btn.play:hover {
+    color: #4403E8;
+    background: rgba(68, 3, 232, 0.05);
+    border-color: #4403E8;
+}
+
+/* --- Player Modal --- */
+.player-modal {
+    width: 90%;
+    max-width: 800px;
+    padding: 0;
+    overflow: hidden;
+    background: black;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background: #111;
+    color: white;
+}
+
+.modal-header h3 {
+    font-size: 16px;
+    font-weight: 500;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    padding: 5px;
+}
+
+.close-btn:hover {
+    color: white;
+}
+
+.player-content {
+    width: 100%;
+    background: black;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 300px;
+}
+
+.player-content video, .player-content audio {
+    width: 100%;
+    max-height: 70vh;
+    outline: none;
 }

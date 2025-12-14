@@ -1,5 +1,14 @@
 """Modelos de datos (DTOs)"""
+from typing import Optional
 from pydantic import BaseModel, Field, validator
+
+
+class VideoInfo(BaseModel):
+    """Modelo para información del video"""
+    title: str
+    duration: int
+    thumbnail: str
+    webpage_url: str
 
 
 class DownloadRequest(BaseModel):
@@ -7,6 +16,8 @@ class DownloadRequest(BaseModel):
     url: str = Field(..., description="URL del video de YouTube")
     format: str = Field(..., description="Formato de descarga (mp3 o mp4)")
     download_id: str = Field(..., description="ID único de la descarga")
+    start_time: Optional[str] = Field(None, description="Tiempo de inicio (HH:MM:SS)")
+    end_time: Optional[str] = Field(None, description="Tiempo de fin (HH:MM:SS)")
     
     @validator('format')
     def validate_format(cls, v):

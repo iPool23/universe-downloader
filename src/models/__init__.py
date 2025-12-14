@@ -1,4 +1,4 @@
 """Modelos de datos"""
-from .schemas import DownloadRequest
+from .schemas import DownloadRequest, VideoInfo
 
-__all__ = ['DownloadRequest']
+__all__ = ['DownloadRequest', 'VideoInfo']

@@ -13,6 +13,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.api import router as api_router
 
+from src.config import DOWNLOADS_DIR
+
 # Crear aplicación
 app = FastAPI(
     title="YouTube Downloader",
@@ -23,6 +25,9 @@ app = FastAPI(
 # Montar archivos estáticos
 static_path = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
+
+# Montar directorio de descargas para reproducción
+app.mount("/content", StaticFiles(directory=DOWNLOADS_DIR), name="content")
 
 # Registrar rutas de la API
 app.include_router(api_router)
