@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, validator
 class VideoInfo(BaseModel):
     """Modelo para información del video"""
     title: str
-    duration: int
+    duration: float
     thumbnail: str
     webpage_url: str
 

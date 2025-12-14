@@ -103,7 +103,7 @@ body {
 .avatar {
     width: 40px;
     height: 40px;
-    background: #EB0058;
+    background: #000000;
     color: white;
     border-radius: 12px;
     display: flex;
@@ -405,9 +405,21 @@ button, .scan-btn, .format-btn, .download-btn, .nav-item, .modal-btn {
 .modal {
     border-radius: 20px;
     padding: 40px;
+    background: white;
+    width: 90%;
+    max-width: 400px;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
 }
+
 .loading-spinner {
-    border-top-color: #4403E8;
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #4403E8;
+    border-radius: 50%;
+    margin: 0 auto 20px; /* Center and add gap */
+    animation: spin 1s linear infinite;
 }
 
 /* --- Animations --- */
