@@ -1,8 +1,10 @@
 """Rutas de la API"""
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse, StreamingResponse
 import uuid
 import sys
+import asyncio
+import json
 from pathlib import Path
 from typing import List
 import os
@@ -12,6 +14,7 @@ from pydantic import BaseModel
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.models import DownloadRequest, VideoInfo
 from src.services import DownloaderService
+from src.services.downloader import download_progress
 from src.config import DOWNLOADS_DIR
 
 router = APIRouter(prefix="/api", tags=["download"])
@@ -75,6 +78,71 @@ async def list_downloads():
     files.sort(key=lambda x: x.created_at, reverse=True)
     return files
 
+class DownloadStartResponse(BaseModel):
+    download_id: str
+    message: str
+
+# Almacén temporal de descargas completadas
+download_results: dict = {}
+
+def run_download_task(download_id: str, request: DownloadRequest):
+    """Ejecuta la descarga en segundo plano"""
+    try:
+        file_path, filename = downloader.download(
+            url=request.url,
+            format_type=request.format,
+            unique_id=download_id,
+            start_time=request.start_time,
+            end_time=request.end_time,
+            quality=request.quality
+        )
+        download_results[download_id] = {
+            'file_path': str(file_path),
+            'filename': filename
+        }
+    except Exception as e:
+        download_progress[download_id] = {
+            'status': 'error',
+            'error': str(e),
+            'percent': 0
+        }
+
+@router.post("/download/start", response_model=DownloadStartResponse)
+async def start_download(request: DownloadRequest, background_tasks: BackgroundTasks):
+    """
+    Inicia una descarga en segundo plano.
+    """
+    download_id = str(uuid.uuid4())[:8]
+    background_tasks.add_task(run_download_task, download_id, request)
+    return DownloadStartResponse(download_id=download_id, message="Descarga iniciada")
+
+@router.get("/download/progress/{download_id}")
+async def get_download_progress(download_id: str):
+    """
+    Obtiene el progreso de una descarga.
+    """
+    progress = download_progress.get(download_id, {'status': 'unknown', 'percent': 0})
+    return progress
+
+@router.get("/download/file/{download_id}")
+async def get_download_file(download_id: str):
+    """
+    Obtiene el archivo descargado una vez completada la descarga.
+    """
+    result = download_results.get(download_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Descarga no encontrada")
+    
+    file_path = Path(result['file_path'])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    
+    return FileResponse(
+        path=file_path,
+        filename=result['filename'],
+        media_type='application/octet-stream'
+    )
+
 @router.post("/download")
 async def download_video(request: DownloadRequest):
     """
@@ -96,7 +164,8 @@ async def download_video(request: DownloadRequest):
             format_type=request.format,
             unique_id=unique_id,
             start_time=request.start_time,
-            end_time=request.end_time
+            end_time=request.end_time,
+            quality=request.quality
         )
         
         return FileResponse(

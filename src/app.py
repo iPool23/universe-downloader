@@ -5,7 +5,7 @@ Autor: Pool Anthony Deza Millones
 GitHub: @iPool23
 """
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 import sys
 from pathlib import Path
@@ -14,6 +14,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.api import router as api_router
 
 from src.config import DOWNLOADS_DIR
+
+# Rutas
+BASE_DIR = Path(__file__).parent.parent
+PUBLIC_DIR = BASE_DIR / "public"
 
 # Crear aplicación
 app = FastAPI(
@@ -31,6 +35,15 @@ app.mount("/content", StaticFiles(directory=DOWNLOADS_DIR), name="content")
 
 # Registrar rutas de la API
 app.include_router(api_router)
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Favicon"""
+    favicon_path = PUBLIC_DIR / "imgs" / "favicon.ico"
+    if favicon_path.exists():
+        return FileResponse(favicon_path)
+    return FileResponse(status_code=404)
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -7,6 +7,8 @@
  */
 
 let selectedFormat = 'mp4';
+let selectedQuality = null;
+let availableQualities = [];
 
 // Manejo de botones de formato
 document.querySelectorAll('.format-btn').forEach(btn => {
@@ -169,16 +171,35 @@ async function scanVideo() {
         const startPlaceholder = hasHours ? "00:00:00" : "00:00";
         const timeLabel = hasHours ? "(H:MM:SS)" : "(MM:SS)";
 
+        const thumbnailHtml = data.thumbnail 
+            ? `<img src="${data.thumbnail}" class="video-thumb" alt="Thumbnail">`
+            : `<div class="video-thumb-placeholder"><i data-lucide="image" style="width: 48px; height: 48px; color: #666;"></i></div>`;
+
+        // Guardar calidades disponibles
+        availableQualities = data.qualities || [];
+        selectedQuality = availableQualities.length > 0 ? availableQualities[0].value : null;
+        
+        // Generar opciones de calidad
+        const qualityOptionsHtml = availableQualities.map((q, index) => 
+            `<option value="${q.value}" ${index === 0 ? 'selected' : ''}>${q.label}</option>`
+        ).join('');
+
         videoInfo.innerHTML = `
                 <div class="video-details">
                 <div class="thumb-container">
-                    <img src="${data.thumbnail}" class="video-thumb" alt="Thumbnail">
+                    ${thumbnailHtml}
                 </div>
                 <div class="video-meta">
                     <h3 title="${data.title}">${data.title}</h3>
                     <p><i data-lucide="clock" style="width: 14px;"></i> ${formattedDuration}</p>
                 </div>
             </div >
+                <div class="quality-selector-container">
+                    <span class="quality-label"><i data-lucide="settings-2" style="width: 14px;"></i> Calidad:</span>
+                    <select id="qualitySelect" class="quality-select" onchange="selectedQuality = parseInt(this.value)">
+                        ${qualityOptionsHtml}
+                    </select>
+                </div>
                 <div class="time-range-container">
                     <span class="time-range-label"><i data-lucide="scissors" style="width: 14px;"></i> Recortar (Opcional):</span>
                     <div class="time-inputs">
@@ -226,6 +247,9 @@ function formatTimeInput(input) {
 }
 
 function formatTime(seconds) {
+    if (seconds === null || seconds === undefined || isNaN(seconds)) {
+        return '--:--';
+    }
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
@@ -247,11 +271,12 @@ async function download() {
         return;
     }
 
-    showModal('loading', '', 'Descargando...', 'Por favor espera mientras se descarga el archivo');
+    showProgressModal();
     downloadBtn.disabled = true;
 
     try {
-        const response = await fetch('/api/download', {
+        // Iniciar descarga en segundo plano
+        const startResponse = await fetch('/api/download/start', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -261,40 +286,115 @@ async function download() {
                 format: selectedFormat,
                 download_id: Math.random().toString(36).substring(7),
                 start_time: startTime || null,
-                end_time: endTime || null
+                end_time: endTime || null,
+                quality: selectedFormat === 'mp4' ? selectedQuality : null
             })
         });
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || 'Error al descargar');
+        if (!startResponse.ok) {
+            const error = await startResponse.json();
+            throw new Error(error.detail || 'Error al iniciar descarga');
         }
 
-        const blob = await response.blob();
-        const downloadUrl = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = downloadUrl;
+        const { download_id } = await startResponse.json();
+        
+        // Polling para obtener progreso
+        let completed = false;
+        while (!completed) {
+            await new Promise(resolve => setTimeout(resolve, 500)); // Esperar 500ms
+            
+            const progressResponse = await fetch(`/api/download/progress/${download_id}`);
+            const progress = await progressResponse.json();
+            
+            updateProgressModal(progress);
+            
+            if (progress.status === 'completed') {
+                completed = true;
+                
+                // Descargar el archivo
+                const fileResponse = await fetch(`/api/download/file/${download_id}`);
+                if (!fileResponse.ok) {
+                    throw new Error('Error al obtener el archivo');
+                }
+                
+                const blob = await fileResponse.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
 
-        const contentDisposition = response.headers.get('content-disposition');
-        let filename = 'video.' + selectedFormat;
-        if (contentDisposition) {
-            const matches = contentDisposition.match(/filename="?(.+)"?/);
-            if (matches && matches[1]) {
-                filename = matches[1].replace(/"/g, '');
+                const contentDisposition = fileResponse.headers.get('content-disposition');
+                let filename = 'video.' + selectedFormat;
+                if (contentDisposition) {
+                    const matches = contentDisposition.match(/filename="?(.+)"?/);
+                    if (matches && matches[1]) {
+                        filename = matches[1].replace(/"/g, '');
+                    }
+                }
+
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(downloadUrl);
+                a.remove();
+
+                showModal('success', 'check-circle-2', '¡Descarga Completada!', 'El archivo se ha guardado correctamente');
+            } else if (progress.status === 'error') {
+                throw new Error(progress.error || 'Error durante la descarga');
             }
         }
-
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(downloadUrl);
-        a.remove();
-
-        showModal('success', 'check-circle-2', '¡Descarga Completada!', 'El archivo se ha guardado correctamente');
     } catch (error) {
         showModal('error', 'x-circle', 'Error', error.message);
     } finally {
         downloadBtn.disabled = false;
+    }
+}
+
+function showProgressModal() {
+    const modalOverlay = document.getElementById('modalOverlay');
+    const modalContent = document.getElementById('modalContent');
+
+    modalContent.innerHTML = `
+        <div class="modal-title">Descargando...</div>
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+            </div>
+            <div class="progress-info">
+                <span id="progressPercent">0%</span>
+                <span id="progressSpeed"></span>
+            </div>
+            <div class="progress-details" id="progressDetails">Iniciando descarga...</div>
+        </div>
+    `;
+
+    modalOverlay.classList.add('show');
+}
+
+function updateProgressModal(progress) {
+    const progressFill = document.getElementById('progressFill');
+    const progressPercent = document.getElementById('progressPercent');
+    const progressSpeed = document.getElementById('progressSpeed');
+    const progressDetails = document.getElementById('progressDetails');
+
+    if (!progressFill) return;
+
+    const percent = Math.round(progress.percent || 0);
+    progressFill.style.width = `${percent}%`;
+    progressPercent.textContent = `${percent}%`;
+    
+    if (progress.speed) {
+        progressSpeed.textContent = progress.speed;
+    }
+    
+    if (progress.status === 'downloading') {
+        const downloaded = progress.downloaded || '';
+        const total = progress.total || '';
+        const eta = progress.eta ? `ETA: ${progress.eta}` : '';
+        progressDetails.textContent = `${downloaded} / ${total} ${eta}`.trim();
+    } else if (progress.status === 'processing') {
+        progressDetails.textContent = 'Procesando video...';
+    } else if (progress.status === 'starting') {
+        progressDetails.textContent = 'Iniciando descarga...';
     }
 }
 
