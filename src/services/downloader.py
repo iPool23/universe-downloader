@@ -13,6 +13,9 @@ from src.utils import find_ffmpeg, sanitize_filename
 # Almacén global de progreso de descargas
 download_progress: Dict[str, Dict] = {}
 
+# Descargas marcadas para cancelar
+downloads_to_cancel: set = set()
+
 
 class ProgressLogger:
     """Logger que captura el progreso de descarga"""
@@ -200,10 +203,18 @@ class DownloaderService:
         
         return opts
     
-    def _get_audio_options(self, unique_id: str) -> Dict:
+    def _get_audio_options(self, unique_id: str, audio_quality: Optional[int] = None) -> Dict:
         """Obtiene opciones para descarga de audio"""
         opts = self._get_base_options(unique_id)
         opts['format'] = 'bestaudio[ext=m4a]/bestaudio/best'
+        
+        # Calidad de audio (por defecto 192kbps)
+        quality = str(audio_quality) if audio_quality else '192'
+        opts['postprocessors'] = [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': quality,
+        }]
         return opts
     
     def _get_video_options(self, unique_id: str, quality: Optional[int] = None) -> Dict:
@@ -221,7 +232,7 @@ class DownloaderService:
         
         return opts
     
-    def download(self, url: str, format_type: str, unique_id: str, start_time: Optional[str] = None, end_time: Optional[str] = None, quality: Optional[int] = None) -> Tuple[Path, str]:
+    def download(self, url: str, format_type: str, unique_id: str, start_time: Optional[str] = None, end_time: Optional[str] = None, quality: Optional[int] = None, audio_quality: Optional[int] = None) -> Tuple[Path, str]:
         """
         Descarga un video o audio de YouTube.
         
@@ -230,6 +241,7 @@ class DownloaderService:
             format_type: Tipo de formato ('mp3' o 'mp4')
             unique_id: ID único para el archivo
             quality: Calidad del video en píxeles (ej: 720, 1080)
+            audio_quality: Calidad del audio en kbps (ej: 128, 192, 256, 320)
             
         Returns:
             Tuple[Path, str]: Ruta del archivo descargado y nombre sanitizado
@@ -254,6 +266,15 @@ class DownloaderService:
             return ansi_escape.sub('', str(text)) if text else ''
         
         def progress_hook(d):
+            # Verificar si se debe cancelar la descarga
+            if unique_id in downloads_to_cancel:
+                downloads_to_cancel.discard(unique_id)
+                download_progress[unique_id].update({
+                    'status': 'cancelled',
+                    'error': 'Descarga cancelada por el usuario'
+                })
+                raise Exception('Descarga cancelada por el usuario')
+            
             if d['status'] == 'downloading':
                 # Extraer porcentaje (limpiar ANSI)
                 percent_str = clean_ansi(d.get('_percent_str', '0%')).strip().replace('%', '')
@@ -283,7 +304,7 @@ class DownloaderService:
         
         # Seleccionar opciones según formato
         if format_type == 'mp3':
-            ydl_opts = self._get_audio_options(unique_id)
+            ydl_opts = self._get_audio_options(unique_id, audio_quality)
         else:
             ydl_opts = self._get_video_options(unique_id, quality)
         

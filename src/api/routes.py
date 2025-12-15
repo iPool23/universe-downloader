@@ -14,7 +14,7 @@ from pydantic import BaseModel
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.models import DownloadRequest, VideoInfo
 from src.services import DownloaderService
-from src.services.downloader import download_progress
+from src.services.downloader import download_progress, downloads_to_cancel
 from src.config import DOWNLOADS_DIR
 
 router = APIRouter(prefix="/api", tags=["download"])
@@ -94,7 +94,8 @@ def run_download_task(download_id: str, request: DownloadRequest):
             unique_id=download_id,
             start_time=request.start_time,
             end_time=request.end_time,
-            quality=request.quality
+            quality=request.quality,
+            audio_quality=request.audio_quality
         )
         download_results[download_id] = {
             'file_path': str(file_path),
@@ -123,6 +124,22 @@ async def get_download_progress(download_id: str):
     """
     progress = download_progress.get(download_id, {'status': 'unknown', 'percent': 0})
     return progress
+
+@router.post("/download/cancel/{download_id}")
+async def cancel_download(download_id: str):
+    """
+    Cancela una descarga en progreso.
+    """
+    progress = download_progress.get(download_id)
+    if not progress:
+        raise HTTPException(status_code=404, detail="Descarga no encontrada")
+    
+    if progress.get('status') in ['completed', 'error', 'cancelled']:
+        return {"message": "La descarga ya ha terminado", "cancelled": False}
+    
+    # Marcar para cancelar
+    downloads_to_cancel.add(download_id)
+    return {"message": "Descarga cancelada", "cancelled": True}
 
 @router.get("/download/file/{download_id}")
 async def get_download_file(download_id: str):

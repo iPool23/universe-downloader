@@ -6,10 +6,14 @@ block_cipher = None
 a = Analysis(
     ['src/main.py'],
     pathex=[],
-    binaries=[],
+    binaries=[
+        ('bin/ffmpeg.exe', 'bin'),
+        ('bin/ffprobe.exe', 'bin'),
+    ],
     datas=[
         ('src/views', 'src/views'),
         ('src/static', 'src/static'),
+        ('public/imgs', 'public/imgs'),
     ],
     hiddenimports=[
         'uvicorn.logging',
@@ -25,6 +29,8 @@ a = Analysis(
         'yt_dlp',
         'yt_dlp.extractor',
         'yt_dlp.postprocessor',
+        'curl_cffi',
+        'curl_cffi.requests',
     ],
     hookspath=[],
     hooksconfig={},
@@ -52,7 +58,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

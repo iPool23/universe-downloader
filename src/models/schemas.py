@@ -26,6 +26,7 @@ class DownloadRequest(BaseModel):
     start_time: Optional[str] = Field(None, description="Tiempo de inicio (HH:MM:SS)")
     end_time: Optional[str] = Field(None, description="Tiempo de fin (HH:MM:SS)")
     quality: Optional[int] = Field(None, description="Calidad del video en píxeles (ej: 720, 1080)")
+    audio_quality: Optional[int] = Field(None, description="Calidad del audio en kbps (ej: 128, 192, 256, 320)")
     
     @validator('format')
     def validate_format(cls, v):

@@ -8,7 +8,17 @@
 
 let selectedFormat = 'mp4';
 let selectedQuality = null;
+let selectedAudioQuality = 192; // Por defecto 192kbps
 let availableQualities = [];
+let currentDownloadId = null; // ID de la descarga actual para poder cancelarla
+
+// Calidades de audio disponibles
+const audioQualities = [
+    { value: 320, label: '320 kbps (Máxima)' },
+    { value: 256, label: '256 kbps (Alta)' },
+    { value: 192, label: '192 kbps (Normal)' },
+    { value: 128, label: '128 kbps (Baja)' }
+];
 
 // Manejo de botones de formato
 document.querySelectorAll('.format-btn').forEach(btn => {
@@ -16,6 +26,20 @@ document.querySelectorAll('.format-btn').forEach(btn => {
         document.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active'));
         this.classList.add('active');
         selectedFormat = this.dataset.format;
+        
+        // Mostrar/ocultar selectores de calidad según el formato
+        const videoQualityContainer = document.getElementById('videoQualityContainer');
+        const audioQualityContainer = document.getElementById('audioQualityContainer');
+        
+        if (videoQualityContainer && audioQualityContainer) {
+            if (selectedFormat === 'mp4') {
+                videoQualityContainer.style.display = 'flex';
+                audioQualityContainer.style.display = 'none';
+            } else {
+                videoQualityContainer.style.display = 'none';
+                audioQualityContainer.style.display = 'flex';
+            }
+        }
     });
 });
 
@@ -178,10 +202,16 @@ async function scanVideo() {
         // Guardar calidades disponibles
         availableQualities = data.qualities || [];
         selectedQuality = availableQualities.length > 0 ? availableQualities[0].value : null;
+        selectedAudioQuality = 192; // Reset al valor por defecto
         
-        // Generar opciones de calidad
+        // Generar opciones de calidad de video
         const qualityOptionsHtml = availableQualities.map((q, index) => 
             `<option value="${q.value}" ${index === 0 ? 'selected' : ''}>${q.label}</option>`
+        ).join('');
+        
+        // Generar opciones de calidad de audio
+        const audioQualityOptionsHtml = audioQualities.map((q) => 
+            `<option value="${q.value}" ${q.value === 192 ? 'selected' : ''}>${q.label}</option>`
         ).join('');
 
         videoInfo.innerHTML = `
@@ -194,10 +224,16 @@ async function scanVideo() {
                     <p><i data-lucide="clock" style="width: 14px;"></i> ${formattedDuration}</p>
                 </div>
             </div >
-                <div class="quality-selector-container">
+                <div id="videoQualityContainer" class="quality-selector-container" style="display: flex;">
                     <span class="quality-label"><i data-lucide="settings-2" style="width: 14px;"></i> Calidad:</span>
                     <select id="qualitySelect" class="quality-select" onchange="selectedQuality = parseInt(this.value)">
                         ${qualityOptionsHtml}
+                    </select>
+                </div>
+                <div id="audioQualityContainer" class="quality-selector-container" style="display: none;">
+                    <span class="quality-label"><i data-lucide="music" style="width: 14px;"></i> Calidad Audio:</span>
+                    <select id="audioQualitySelect" class="quality-select" onchange="selectedAudioQuality = parseInt(this.value)">
+                        ${audioQualityOptionsHtml}
                     </select>
                 </div>
                 <div class="time-range-container">
@@ -287,7 +323,8 @@ async function download() {
                 download_id: Math.random().toString(36).substring(7),
                 start_time: startTime || null,
                 end_time: endTime || null,
-                quality: selectedFormat === 'mp4' ? selectedQuality : null
+                quality: selectedFormat === 'mp4' ? selectedQuality : null,
+                audio_quality: selectedFormat === 'mp3' ? selectedAudioQuality : null
             })
         });
 
@@ -297,6 +334,7 @@ async function download() {
         }
 
         const { download_id } = await startResponse.json();
+        currentDownloadId = download_id; // Guardar para poder cancelar
         
         // Polling para obtener progreso
         let completed = false;
@@ -306,10 +344,18 @@ async function download() {
             const progressResponse = await fetch(`/api/download/progress/${download_id}`);
             const progress = await progressResponse.json();
             
+            // Si fue cancelada, salir del loop
+            if (progress.status === 'cancelled') {
+                completed = true;
+                currentDownloadId = null;
+                return; // El modal de cancelación ya se mostró
+            }
+            
             updateProgressModal(progress);
             
             if (progress.status === 'completed') {
                 completed = true;
+                currentDownloadId = null;
                 
                 // Descargar el archivo
                 const fileResponse = await fetch(`/api/download/file/${download_id}`);
@@ -365,9 +411,31 @@ function showProgressModal() {
             </div>
             <div class="progress-details" id="progressDetails">Iniciando descarga...</div>
         </div>
+        <button class="modal-btn cancel-btn" onclick="cancelDownload()">
+            <i data-lucide="x" style="width: 16px; height: 16px;"></i> Cancelar Descarga
+        </button>
     `;
 
     modalOverlay.classList.add('show');
+    lucide.createIcons();
+}
+
+async function cancelDownload() {
+    if (!currentDownloadId) return;
+    
+    try {
+        const response = await fetch(`/api/download/cancel/${currentDownloadId}`, {
+            method: 'POST'
+        });
+        const result = await response.json();
+        
+        if (result.cancelled) {
+            closeModal();
+            showModal('error', 'x-circle', 'Descarga Cancelada', 'La descarga ha sido cancelada');
+        }
+    } catch (error) {
+        console.error('Error al cancelar:', error);
+    }
 }
 
 function updateProgressModal(progress) {
