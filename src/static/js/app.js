@@ -3,7 +3,7 @@
  * 
  * @author Pool Anthony Deza Millones
  * @github @iPool23
- * @version 1.0.0
+ * @version 2.1.0
  */
 
 let selectedFormat = 'mp4';
@@ -11,6 +11,33 @@ let selectedQuality = null;
 let selectedAudioQuality = 192; // Por defecto 192kbps
 let availableQualities = [];
 let currentDownloadId = null; // ID de la descarga actual para poder cancelarla
+
+// Theme Handling
+const themeSwitch = document.getElementById('themeSwitch');
+const userTheme = localStorage.getItem('theme');
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+// Initial State
+if (userTheme === 'dark' || (!userTheme && systemDark)) {
+    document.body.classList.add('dark-mode');
+    if (themeSwitch) themeSwitch.checked = true;
+} else {
+    document.body.classList.remove('dark-mode');
+    if (themeSwitch) themeSwitch.checked = false;
+}
+
+// Toggle Listener
+if (themeSwitch) {
+    themeSwitch.addEventListener('change', function (e) {
+        if (e.target.checked) {
+            document.body.classList.add('dark-mode');
+            localStorage.setItem('theme', 'dark');
+        } else {
+            document.body.classList.remove('dark-mode');
+            localStorage.setItem('theme', 'light');
+        }
+    });
+}
 
 // Calidades de audio disponibles
 const audioQualities = [
@@ -139,11 +166,19 @@ async function loadDownloads() {
                            <i data-lucide="file-text" style="width: 16px;"></i>
                        </button>`;
 
+                // Botón de conversión a H.264 solo para videos
+                const convertBtn = file.type === 'video' && !file.filename.includes('_h264')
+                    ? `<button class="action-btn" title="Convertir a H.264" onclick="convertToH264('${file.filename}')">
+                           <i data-lucide="repeat" style="width: 16px;"></i>
+                       </button>`
+                    : '';
+
                 actionsHtml = `
                     <button class="action-btn play" title="Reproducir" onclick="playMedia('${file.filename}', '${file.type}')">
                         <i data-lucide="play" style="width: 16px;"></i>
                     </button>
                     ${transcribeBtn}
+                    ${convertBtn}
                     <button class="action-btn" title="Abrir Ubicación" onclick="openFolder('${escapedPath}')">
                         <i data-lucide="folder" style="width: 16px;"></i>
                     </button>
@@ -706,3 +741,101 @@ function updateTranscribeProgressModal(progress) {
     }
 }
 
+// =====================================================
+// H.264 CONVERSION FUNCTIONS
+// =====================================================
+
+let currentConvertId = null;
+
+async function convertToH264(filename) {
+    showConvertProgressModal();
+
+    try {
+        // Iniciar conversión en segundo plano
+        const startResponse = await fetch('/api/convert', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ filename: filename })
+        });
+
+        if (!startResponse.ok) {
+            const error = await startResponse.json();
+            throw new Error(error.detail || 'Error al iniciar conversión');
+        }
+
+        const { convert_id } = await startResponse.json();
+        currentConvertId = convert_id;
+
+        // Polling para obtener progreso
+        let completed = false;
+        while (!completed) {
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar 1s
+
+            const progressResponse = await fetch(`/api/convert/progress/${convert_id}`);
+            const progress = await progressResponse.json();
+
+            updateConvertProgressModal(progress);
+
+            if (progress.status === 'completed') {
+                completed = true;
+                currentConvertId = null;
+
+                showModal('success', 'check-circle-2', '¡Conversión Completada!', 'El archivo H.264 se ha creado correctamente');
+
+                // Recargar lista de descargas para mostrar el nuevo archivo
+                loadDownloads();
+
+            } else if (progress.status === 'error') {
+                throw new Error(progress.error || 'Error durante la conversión');
+            }
+        }
+    } catch (error) {
+        showModal('error', 'x-circle', 'Error', error.message);
+    }
+}
+
+function showConvertProgressModal() {
+    const modalOverlay = document.getElementById('modalOverlay');
+    const modalContent = document.getElementById('modalContent');
+
+    modalContent.innerHTML = `
+        <div class="modal-icon" style="color: #000000;">
+            <i data-lucide="repeat" style="width: 48px; height: 48px;"></i>
+        </div>
+        <div class="modal-title">Convirtiendo a H.264...</div>
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div class="progress-fill" id="convertProgressFill" style="width: 0%"></div>
+            </div>
+            <div class="progress-info">
+                <span id="convertProgressPercent">0%</span>
+            </div>
+            <div class="progress-details" id="convertProgressDetails">Iniciando conversión...</div>
+        </div>
+    `;
+
+    modalOverlay.classList.add('show');
+    lucide.createIcons();
+}
+
+function updateConvertProgressModal(progress) {
+    const progressFill = document.getElementById('convertProgressFill');
+    const progressPercent = document.getElementById('convertProgressPercent');
+    const progressDetails = document.getElementById('convertProgressDetails');
+
+    if (!progressFill) return;
+
+    const percent = Math.round(progress.percent || 0);
+    progressFill.style.width = `${percent}%`;
+    progressPercent.textContent = `${percent}%`;
+
+    if (progress.message) {
+        progressDetails.textContent = progress.message;
+    } else if (progress.status === 'converting') {
+        progressDetails.textContent = 'Convirtiendo video a H.264...';
+    } else if (progress.status === 'starting') {
+        progressDetails.textContent = 'Iniciando conversión...';
+    }
+}

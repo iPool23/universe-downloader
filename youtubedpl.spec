@@ -1,6 +1,8 @@
 
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_data_files
+
 block_cipher = None
 
 a = Analysis(
@@ -14,7 +16,7 @@ a = Analysis(
         ('src/views', 'src/views'),
         ('src/static', 'src/static'),
         ('public/imgs', 'public/imgs'),
-    ],
+    ] + collect_data_files('whisper'),
     hiddenimports=[
         'uvicorn.logging',
         'uvicorn.loops',
@@ -56,7 +58,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='UniverseDownloader',
+    name='Downloader_v2.1.0',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

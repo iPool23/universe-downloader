@@ -21,9 +21,9 @@ PUBLIC_DIR = BASE_DIR / "public"
 
 # Crear aplicación
 app = FastAPI(
-    title="Universe Downloader API",
+    title="Downloader API",
     description="API para descargar videos y audio de YouTube",
-    version="1.0.0"
+    version="2.1.0"
 )
 
 # Montar archivos estáticos

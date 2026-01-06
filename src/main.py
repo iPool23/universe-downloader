@@ -44,7 +44,13 @@ tray_icon = None
 
 def get_icon_path():
     """Obtiene la ruta del icono"""
-    base_dir = Path(__file__).parent.parent
+    if getattr(sys, 'frozen', False):
+        # Si es un ejecutable (PyInstaller)
+        base_dir = Path(sys._MEIPASS)
+    else:
+        # Si es script normal
+        base_dir = Path(__file__).parent.parent
+        
     icon_path = base_dir / "public" / "imgs" / "favicon.ico"
     if icon_path.exists():
         return str(icon_path)
@@ -100,9 +106,9 @@ def create_tray_icon():
     
     # Crear icono
     tray_icon = pystray.Icon(
-        "Universe Downloader",
+        "Downloader",
         image,
-        "Universe Downloader",
+        "Downloader",
         menu
     )
     

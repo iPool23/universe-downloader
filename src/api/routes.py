@@ -14,7 +14,7 @@ from pydantic import BaseModel
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.models import DownloadRequest, VideoInfo
 from src.services import DownloaderService
-from src.services.downloader import download_progress, downloads_to_cancel
+from src.services.downloader import download_progress, downloads_to_cancel, conversion_progress
 from src.config import DOWNLOADS_DIR
 
 router = APIRouter(prefix="/api", tags=["download"])
@@ -305,3 +305,89 @@ async def get_transcription_file(transcribe_id: str):
         media_type='text/plain; charset=utf-8'
     )
 
+# =====================================================
+# H.264 CONVERSION ENDPOINTS
+# =====================================================
+
+# Almacén temporal de conversiones completadas
+conversion_results: dict = {}
+
+class ConvertRequest(BaseModel):
+    filename: str
+
+class ConvertStartResponse(BaseModel):
+    convert_id: str
+    message: str
+
+def run_convert_task(convert_id: str, file_path: str):
+    """Ejecuta la conversión en segundo plano"""
+    try:
+        output_path, output_name = downloader.convert_to_h264(
+            file_path=file_path,
+            convert_id=convert_id
+        )
+        conversion_results[convert_id] = {
+            'output_path': str(output_path),
+            'output_name': output_name
+        }
+    except Exception as e:
+        conversion_progress[convert_id] = {
+            'status': 'error',
+            'percent': 0,
+            'error': str(e)
+        }
+
+@router.post("/convert", response_model=ConvertStartResponse)
+async def start_conversion(request: ConvertRequest, background_tasks: BackgroundTasks):
+    """
+    Inicia una conversión a H.264 en segundo plano.
+    """
+    # Buscar el archivo en la carpeta de descargas
+    file_path = Path(DOWNLOADS_DIR) / request.filename
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    
+    # Verificar que es un archivo de video
+    valid_extensions = {'.mp4', '.webm', '.mkv', '.avi', '.mov'}
+    if file_path.suffix.lower() not in valid_extensions:
+        raise HTTPException(status_code=400, detail="Formato de archivo no soportado")
+    
+    convert_id = str(uuid.uuid4())[:8]
+    
+    # Inicializar progreso
+    conversion_progress[convert_id] = {
+        'status': 'starting',
+        'percent': 0,
+        'message': 'Iniciando conversión...'
+    }
+    
+    background_tasks.add_task(run_convert_task, convert_id, str(file_path))
+    return ConvertStartResponse(convert_id=convert_id, message="Conversión iniciada")
+
+@router.get("/convert/progress/{convert_id}")
+async def get_conversion_progress(convert_id: str):
+    """
+    Obtiene el progreso de una conversión.
+    """
+    progress = conversion_progress.get(convert_id, {'status': 'unknown', 'percent': 0})
+    return progress
+
+@router.get("/convert/file/{convert_id}")
+async def get_conversion_file(convert_id: str):
+    """
+    Obtiene el archivo convertido una vez completada.
+    """
+    result = conversion_results.get(convert_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Conversión no encontrada")
+    
+    file_path = Path(result['output_path'])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    
+    return FileResponse(
+        path=file_path,
+        filename=result['output_name'],
+        media_type='video/mp4'
+    )

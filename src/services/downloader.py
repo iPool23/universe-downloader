@@ -14,6 +14,9 @@ from src.utils import find_ffmpeg, sanitize_filename
 # Almacén global de progreso de descargas
 download_progress: Dict[str, Dict] = {}
 
+# Almacén global de progreso de conversiones
+conversion_progress: Dict[str, Dict] = {}
+
 # Descargas marcadas para cancelar
 downloads_to_cancel: set = set()
 
@@ -502,3 +505,120 @@ class DownloaderService:
                 'error': str(e)
             })
             raise
+    
+    def convert_to_h264(self, file_path: str, convert_id: str) -> Tuple[Path, str]:
+        """
+        Convierte un video a H.264 usando ffmpeg-python.
+        """
+        import ffmpeg
+        import time
+        import threading
+        
+        input_path = Path(file_path)
+        if not input_path.exists():
+            raise Exception("Archivo no encontrado")
+        
+        # Crear nombre de salida con sufijo _h264
+        stem = input_path.stem
+        output_path = input_path.parent / f"{stem}_h264.mp4"
+        
+        # Eliminar archivo de salida si existe
+        if output_path.exists():
+            output_path.unlink()
+        
+        # Inicializar progreso
+        conversion_progress[convert_id] = {
+            'status': 'starting',
+            'percent': 0,
+            'message': 'Iniciando conversión...'
+        }
+        
+        try:
+            # Obtener duración del video
+            probe = ffmpeg.probe(str(input_path))
+            duration = float(probe['format']['duration'])
+            print(f"[CONVERT] Duración del video: {duration}s")
+        except Exception as e:
+            print(f"[CONVERT] No se pudo obtener duración: {e}")
+            duration = 60  # Asumir 60 segundos si no se puede obtener
+        
+        try:
+            conversion_progress[convert_id].update({
+                'status': 'converting',
+                'percent': 5,
+                'message': 'Convirtiendo a H.264...'
+            })
+            
+            # Variable para almacenar el resultado del hilo
+            convert_error = [None]
+            
+            def run_ffmpeg():
+                try:
+                    # Usar ffmpeg-python para la conversión
+                    stream = ffmpeg.input(str(input_path))
+                    stream = ffmpeg.output(
+                        stream,
+                        str(output_path),
+                        vcodec='libx264',
+                        acodec='aac',
+                        preset='medium',
+                        crf=23,
+                        audio_bitrate='192k',
+                        movflags='+faststart'
+                    )
+                    ffmpeg.run(stream, overwrite_output=True, quiet=True)
+                except ffmpeg.Error as e:
+                    convert_error[0] = str(e.stderr.decode('utf-8', errors='ignore') if e.stderr else str(e))
+                except Exception as e:
+                    convert_error[0] = str(e)
+            
+            # Ejecutar FFmpeg en un hilo separado
+            ffmpeg_thread = threading.Thread(target=run_ffmpeg)
+            ffmpeg_thread.start()
+            
+            # Monitorear progreso
+            start_time = time.time()
+            while ffmpeg_thread.is_alive():
+                time.sleep(0.5)
+                elapsed = time.time() - start_time
+                
+                # Calcular progreso basado en tiempo estimado (asumir 1.5x duración para conversión)
+                estimated_time = duration * 1.5
+                percent = min(95, int((elapsed / estimated_time) * 100) + 5)
+                
+                conversion_progress[convert_id].update({
+                    'status': 'converting',
+                    'percent': percent,
+                    'message': f'Convirtiendo... {percent}%'
+                })
+            
+            ffmpeg_thread.join()
+            
+            # Verificar si hubo error
+            if convert_error[0]:
+                raise Exception(f"Error de FFmpeg: {convert_error[0][:300]}")
+            
+            if not output_path.exists():
+                raise Exception("No se pudo crear el archivo convertido")
+            
+            # Generar nombre de archivo
+            filename = output_path.name
+            
+            conversion_progress[convert_id].update({
+                'status': 'completed',
+                'percent': 100,
+                'message': 'Conversión completada',
+                'filename': filename
+            })
+            
+            print(f"[CONVERT] Conversión completada: {filename}")
+            return output_path, filename
+            
+        except Exception as e:
+            conversion_progress[convert_id].update({
+                'status': 'error',
+                'percent': 0,
+                'error': str(e)
+            })
+            raise
+

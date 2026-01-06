@@ -7,13 +7,13 @@ from pathlib import Path
 import shutil
 
 print("=" * 60)
-print("CREANDO PAQUETE DE DISTRIBUCIÓN (UNIVERSE)")
+print("CREANDO PAQUETE DE DISTRIBUCIÓN")
 print("=" * 60)
 
 # Verificar que existe el ejecutable
-exe_path = Path("dist/UniverseDownloader.exe")
+exe_path = Path("dist/Downloader.exe")
 if not exe_path.exists():
-    print("✗ Error: No se encontró UniverseDownloader.exe")
+    print("✗ Error: No se encontró Downloader.exe")
     print("  Ejecuta primero: python build.py")
     exit(1)
 
@@ -25,8 +25,8 @@ release_folder.mkdir()
 
 print("\n[1/3] Copiando archivos...")
 # Copiar ejecutable
-shutil.copy("dist/UniverseDownloader.exe", release_folder / "UniverseDownloader.exe")
-print("✓ UniverseDownloader.exe")
+shutil.copy("dist/Downloader.exe", release_folder / "Downloader.exe")
+print("✓ Downloader.exe")
 
 # Copiar README
 shutil.copy("dist/LEEME.txt", release_folder / "LEEME.txt")
@@ -47,7 +47,7 @@ print("✓ Carpeta downloads")
 
 # Crear archivo de versión
 version_info = """
-Universe Downloader v1.0
+Downloader v1.0
 =======================
 
 Características:
@@ -73,7 +73,7 @@ with open(release_folder / "VERSION.txt", "w", encoding="utf-8") as f:
 print("✓ VERSION.txt")
 
 print("\n[2/3] Creando archivo ZIP...")
-zip_name = "UniverseDownloader_v1.0_Windows.zip"
+zip_name = "Downloader_v1.0_Windows.zip"
 with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
     for root, dirs, files in os.walk(release_folder):
         for file in files:
@@ -102,7 +102,7 @@ print(f"\n📦 Archivo: {zip_name}")
 print(f"📊 Tamaño ZIP: {zip_size:.2f} MB")
 print(f"📊 Tamaño EXE: {exe_size:.2f} MB")
 print("\n📁 Contenido del paquete:")
-print("   • UniverseDownloader.exe - Aplicación principal")
+print("   • Downloader.exe - Aplicación principal")
 print("   • LEEME.txt - Instrucciones de uso")
 print("   • VERSION.txt - Información de versión")
 print("   • downloads/ - Carpeta para descargas")

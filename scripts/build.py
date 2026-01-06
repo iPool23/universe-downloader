@@ -68,7 +68,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='UniverseDownloader',
+    name='Downloader',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -107,16 +107,16 @@ except subprocess.CalledProcessError as e:
 # Crear README para distribución
 print("\n[4/4] Creando archivos de distribución...")
 readme_content = """
-╔══════════════════════════════════════════════════════════╗
-║          UNIVERSE DOWNLOADER - INSTRUCCIONES             ║
-╚══════════════════════════════════════════════════════════╝
+╔═════════════════════════════════════════════════╗
+║          DOWNLOADER - INSTRUCCIONES             ║
+╚═════════════════════════════════════════════════╝
 
 📦 CONTENIDO DEL PAQUETE:
-   • UniverseDownloader.exe - Aplicación principal
+   • Downloader.exe - Aplicación principal
 
 🚀 CÓMO USAR:
 
-   1. Ejecuta "UniverseDownloader.exe"
+   1. Ejecuta "Downloader.exe"
    
    2. Se abrirá automáticamente tu navegador en:
       http://127.0.0.1:8000
@@ -169,7 +169,7 @@ print("✅ BUILD COMPLETADO EXITOSAMENTE")
 print("=" * 60)
 print(f"\n📁 Ubicación: {os.path.abspath('dist')}")
 print("\n📦 Archivos generados:")
-print("   • UniverseDownloader.exe")
+print("   • Downloader.exe")
 print("   • LEEME.txt")
 print("\n🚀 Puedes distribuir la carpeta 'dist' completa")
 print("   El ejecutable funciona sin necesidad de Python instalado")

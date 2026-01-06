@@ -52,11 +52,27 @@ class TranscriberService:
         self._model = None
     
     def _load_model(self):
-        """Carga el modelo Whisper de forma perezosa"""
+        """Carga el modelo Whisper de forma perezosa con fallback a CPU"""
         if self._model is None:
             try:
+                import torch
                 import whisper
-                self._model = whisper.load_model(self.model_name)
+                
+                # Check for CUDA availability first
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                
+                try:
+                    # Try loading on the detected device (likely CUDA)
+                    print(f"[WHISPER] Loading model on {device}...")
+                    self._model = whisper.load_model(self.model_name, device=device)
+                except Exception as e:
+                    if device == "cuda":
+                        print(f"[WHISPER] Error loading on CUDA: {e}")
+                        print("[WHISPER] Falling back to CPU...")
+                        self._model = whisper.load_model(self.model_name, device="cpu")
+                    else:
+                        raise e
+
             except ImportError:
                 raise RuntimeError(
                     "Whisper no está instalado. Ejecute: pip install openai-whisper"
