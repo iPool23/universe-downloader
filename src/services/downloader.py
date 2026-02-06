@@ -2,8 +2,11 @@
 import yt_dlp
 import sys
 import os
+import shutil
+import glob as glob_mod
 import asyncio
 import threading
+import time
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Callable
 
@@ -45,7 +48,8 @@ class ProgressLogger:
 
 class QuietLogger:
     def debug(self, msg):
-        pass
+        if msg.startswith('[debug] '):
+            print(msg)
 
     def warning(self, msg):
         # Ignore common noise warnings
@@ -67,12 +71,59 @@ class DownloaderService:
     def __init__(self):
         self.ffmpeg_path = find_ffmpeg()
         if self.ffmpeg_path:
+            print(f"FFmpeg found at: {self.ffmpeg_path}")
             # Añadir a PATH para asegurar que yt-dlp lo encuentre
             os.environ["PATH"] += os.pathsep + self.ffmpeg_path
+        
+        # Ensure deno is on PATH (required by yt-dlp for YouTube n-challenge)
+        self._setup_deno_path()
     
     def _is_tiktok_url(self, url: str) -> bool:
         """Check if URL is a TikTok URL"""
         return 'tiktok.com' in url or 'vm.tiktok.com' in url
+    
+    def _setup_deno_path(self):
+        """Find deno executable and add its directory to PATH.
+        
+        yt-dlp needs a JS runtime (deno/node) to solve YouTube's n-parameter
+        challenge. Without it, download URLs get throttled and return 403.
+        """
+        # 1. Already on PATH?
+        deno_path = shutil.which('deno')
+        if deno_path:
+            print(f"Deno found on PATH: {deno_path}")
+            return
+        
+        # 2. Search common installation locations
+        search_locations = [
+            # Default deno install
+            os.path.expanduser(r'~\.deno\bin'),
+            # WinGet install (Windows)
+            *glob_mod.glob(os.path.join(
+                os.environ.get('LOCALAPPDATA', ''),
+                r'Microsoft\WinGet\Packages\*eno*'
+            )),
+            # Scoop install
+            os.path.expanduser(r'~\scoop\shims'),
+            # Chocolatey
+            r'C:\ProgramData\chocolatey\bin',
+        ]
+        
+        for location in search_locations:
+            if not location or not os.path.isdir(location):
+                continue
+            deno_exe = os.path.join(location, 'deno.exe')
+            if os.path.isfile(deno_exe):
+                print(f"Deno found at: {deno_exe}")
+                os.environ["PATH"] = location + os.pathsep + os.environ.get("PATH", "")
+                return
+        
+        # 3. Also check for node as fallback JS runtime
+        if shutil.which('node'):
+            print("Node.js found on PATH (fallback JS runtime)")
+            return
+        
+        print("WARNING: No JS runtime (deno/node) found. YouTube downloads may get 403 errors.")
     
     def _download_with_pybalt_sync(self, url: str, unique_id: str) -> Tuple[Path, str]:
         """Download TikTok video using pybalt CLI (subprocess)"""
@@ -206,8 +257,13 @@ class DownloaderService:
             'no_warnings': True,
             'noplaylist': True, # IMPORTANT: Prevent scanning entire playlists
             'logger': QuietLogger(),
-            # Removed extractor_args to allow default fallback behavior
+            # Auto-download latest EJS challenge solver from GitHub
+            'remote_components': ['ejs:github'],
         }
+        
+        if self.ffmpeg_path:
+            path_obj = Path(self.ffmpeg_path)
+            opts['ffmpeg_location'] = self.ffmpeg_path if path_obj.is_dir() else str(path_obj.parent)
         
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -302,22 +358,23 @@ class DownloaderService:
         """Obtiene las opciones base para yt-dlp"""
         opts = {
             'outtmpl': str(DOWNLOAD_FOLDER / f'{unique_id}.%(ext)s'),
-            'quiet': True,
-            'no_warnings': True,
-            'noplaylist': True,
+            'quiet': False,
+            'no_warnings': False,
+            'verbose': True,
             'logger': QuietLogger(),
+            'extractor_retries': 3,
+            # Auto-download latest EJS challenge solver from GitHub
+            # (required when bundled version is outdated for YouTube n-challenge)
+            'remote_components': ['ejs:github'],
+            # Let yt-dlp use its default player clients and headers.
         }
         
         if self.ffmpeg_path:
             path_obj = Path(self.ffmpeg_path)
             if path_obj.is_dir():
-                ffmpeg_exe = path_obj / 'ffmpeg.exe'
-                if ffmpeg_exe.exists():
-                    opts['ffmpeg_location'] = str(ffmpeg_exe)
-                else:
-                    opts['ffmpeg_location'] = self.ffmpeg_path
-            else:
                 opts['ffmpeg_location'] = self.ffmpeg_path
+            else:
+                opts['ffmpeg_location'] = str(path_obj.parent)
         
         # Check for cookies.txt
         cookies_path = Path("cookies.txt")
@@ -454,57 +511,125 @@ class DownloaderService:
             # Force re-encoding at cuts for precision and broad compatibility (fixes Facebook/others)
             ydl_opts['force_keyframes_at_cuts'] = True
         
-        # Descargar
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                
-                # Buscar archivo descargado
-                downloaded_files = list(DOWNLOAD_FOLDER.glob(f'{unique_id}.*'))
-                
-                if not downloaded_files:
-                    raise Exception("No se pudo descargar el archivo")
-                
-                file_path = downloaded_files[0]
-                
-                # Generar nombre de archivo
-                title = info.get('title', 'video')
-                safe_title = sanitize_filename(title)
-                filename = f"{safe_title}.{file_path.suffix[1:]}"
-                
-                # Marcar como completado
+        # Descargar con reintentos para errores 403
+        max_retries = 3
+        last_error = None
+        
+        for attempt in range(max_retries):
+            # Clean up partial files from previous attempts
+            if attempt > 0:
+                for f in DOWNLOAD_FOLDER.glob(f'{unique_id}.*'):
+                    try: f.unlink()
+                    except: pass
+                wait_time = 2 ** attempt  # 2s, 4s
+                print(f"[RETRY] Attempt {attempt + 1}/{max_retries} after {wait_time}s wait...")
                 download_progress[unique_id].update({
-                    'status': 'completed',
-                    'percent': 100,
-                    'filename': filename
+                    'status': 'downloading',
+                    'percent': 0,
+                    'speed': f'Reintentando ({attempt + 1}/{max_retries})...',
                 })
+                time.sleep(wait_time)
                 
-                return file_path, filename
-        except Exception as e:
-            # If TikTok and yt-dlp failed, try pybalt as fallback
-            if self._is_tiktok_url(url):
-                try:
-                    print(f"yt-dlp failed for TikTok, trying pybalt fallback...")
-                    download_progress[unique_id].update({
-                        'status': 'downloading',
-                        'percent': 25,
-                        'speed': 'Trying cobalt.tools...'
-                    })
-                    # Use sync pybalt CLI
-                    result = self._download_with_pybalt_sync(url, unique_id)
-                    return result
-                except Exception as pybalt_error:
-                    download_progress[unique_id].update({
-                        'status': 'error',
-                        'error': f"yt-dlp: {str(e)} | pybalt: {str(pybalt_error)}"
-                    })
-                    raise Exception(f"All download methods failed. yt-dlp: {str(e)} | pybalt: {str(pybalt_error)}")
+                # On retry, try alternate player clients to bypass n-challenge issues
+                if attempt == 1:
+                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['web_creator']}}
+                    print("[RETRY] Switching to web_creator player client...")
+                elif attempt == 2:
+                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['mweb']}}
+                    print("[RETRY] Switching to mweb player client...")
             
-            download_progress[unique_id].update({
-                'status': 'error',
-                'error': str(e)
-            })
-            raise
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    
+                    # Buscar archivo descargado
+                    downloaded_files = list(DOWNLOAD_FOLDER.glob(f'{unique_id}.*'))
+                    
+                    if not downloaded_files:
+                        raise Exception("No se pudo descargar el archivo")
+                    
+                    file_path = downloaded_files[0]
+                    
+                    # Generar nombre de archivo
+                    title = info.get('title', 'video')
+                    safe_title = sanitize_filename(title)
+                    filename = f"{safe_title}.{file_path.suffix[1:]}"
+                    
+                    # Marcar como completado
+                    download_progress[unique_id].update({
+                        'status': 'completed',
+                        'percent': 100,
+                        'filename': filename
+                    })
+                    
+                    return file_path, filename
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+                
+                # If 403 Forbidden, retry with fresh extraction
+                if '403' in error_str and attempt < max_retries - 1:
+                    print(f"[RETRY] Got 403 Forbidden, will retry with fresh URLs...")
+                    continue
+                
+                # If TikTok and yt-dlp failed, try pybalt as fallback
+                if self._is_tiktok_url(url):
+                    try:
+                        print(f"yt-dlp failed for TikTok, trying pybalt fallback...")
+                        download_progress[unique_id].update({
+                            'status': 'downloading',
+                            'percent': 25,
+                            'speed': 'Trying cobalt.tools...'
+                        })
+                        result = self._download_with_pybalt_sync(url, unique_id)
+                        return result
+                    except Exception as pybalt_error:
+                        download_progress[unique_id].update({
+                            'status': 'error',
+                            'error': f"yt-dlp: {str(e)} | pybalt: {str(pybalt_error)}"
+                        })
+                        raise Exception(f"All download methods failed. yt-dlp: {str(e)} | pybalt: {str(pybalt_error)}")
+                
+                # General fallback: try 'best' single format (no merge needed)
+                downloaded_files = list(DOWNLOAD_FOLDER.glob(f'{unique_id}.*'))
+                if "ffmpeg" in error_str or "403" in error_str or not downloaded_files or (downloaded_files and downloaded_files[0].stat().st_size < 1000000):
+                    print(f"Download failed. Retrying with 'best' single format (no merge)...")
+                    # Remove corrupted/partial files
+                    for f in DOWNLOAD_FOLDER.glob(f'{unique_id}.*'):
+                        try: f.unlink()
+                        except: pass
+                    
+                    ydl_opts['format'] = 'best'
+                    if 'merge_output_format' in ydl_opts:
+                        del ydl_opts['merge_output_format']
+                    
+                    try:
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            info = ydl.extract_info(url, download=True)
+                            downloaded_files = list(DOWNLOAD_FOLDER.glob(f'{unique_id}.*'))
+                            if downloaded_files:
+                                file_path = downloaded_files[0]
+                                title = info.get('title', 'video')
+                                safe_title = sanitize_filename(title)
+                                filename = f"{safe_title}.{file_path.suffix[1:]}"
+                                download_progress[unique_id].update({
+                                    'status': 'completed',
+                                    'percent': 100,
+                                    'filename': filename
+                                })
+                                return file_path, filename
+                    except Exception:
+                        pass  # Fall through to error
+                
+                # No more retries or fallbacks
+                break
+        
+        # All retries exhausted
+        download_progress[unique_id].update({
+            'status': 'error',
+            'error': str(last_error)
+        })
+        raise last_error
     
     def convert_to_h264(self, file_path: str, convert_id: str) -> Tuple[Path, str]:
         """

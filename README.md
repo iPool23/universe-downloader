@@ -12,7 +12,6 @@ Aplicación web profesional para descargar videos y audio de YouTube, Facebook, 
 
 - ✅ Descarga videos en formato MP4 (hasta 4K)
 - ✅ Descarga audio en formato MP3 (compatible con todos los navegadores)
-- ✅ **🆕 Transcripción de audio/video a texto con OpenAI Whisper**
 - ✅ Reproductor integrado para audio y video
 - ✅ Interfaz web moderna y responsive
 - ✅ Notificaciones modales elegantes
@@ -20,17 +19,6 @@ Aplicación web profesional para descargar videos y audio de YouTube, Facebook, 
 - ✅ Sin dependencias de frontend (Vanilla JS)
 - ✅ Detección automática de FFmpeg
 - ✅ Soporte para múltiples plataformas (YouTube, TikTok, Facebook, Kick, Twitch)
-
-## 🎤 Transcripción con Whisper
-
-Convierte cualquier audio o video descargado a texto con un solo clic:
-
-1. Descarga un video o audio
-2. Ve a la sección "Descargas"
-3. Haz clic en el botón 📝 junto al archivo
-4. ¡Automáticamente se genera un archivo `.txt` con la transcripción!
-
-> **Nota**: La primera transcripción descargará el modelo Whisper (~140MB).
 
 ## Arquitectura
 
@@ -44,8 +32,7 @@ src/
 │   └── schemas.py
 ├── services/         # Lógica de negocio
 │   ├── __init__.py
-│   ├── downloader.py
-│   └── transcriber.py  # 🆕 Servicio de transcripción
+│   └── downloader.py
 ├── static/           # Archivos estáticos
 │   ├── css/
 │   │   └── styles.css
@@ -98,7 +85,6 @@ La aplicación se abrirá automáticamente en tu navegador en `http://127.0.0.1:
 
 - **FastAPI** - Framework web moderno y rápido
 - **yt-dlp** - Descarga de videos de múltiples plataformas
-- **OpenAI Whisper** - Transcripción de audio a texto con IA
 - **Pydantic** - Validación de datos
 - **Uvicorn** - Servidor ASGI
 - **FFmpeg** - Procesamiento de audio y video

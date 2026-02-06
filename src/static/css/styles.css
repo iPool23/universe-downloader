@@ -11,7 +11,7 @@
   --bg-primary: rgba(255, 255, 255, 0.92);
   --bg-secondary: #fafafa;
   --bg-card: white;
-  --bg-sidebar: rgba(255, 255, 255, 0.5);
+  --bg-sidebar: #fff;
   --bg-input: #fdfdfd;
   --bg-file-item: #f8f9fa;
   --text-primary: #111;
@@ -21,8 +21,8 @@
   --border-light: rgba(0, 0, 0, 0.05);
   --border-color: #eee;
   --border-input: #f0f0f0;
-  --accent-color: #4403e8;
-  --accent-gradient: linear-gradient(135deg, #4403e8 0%, #eb0058 100%);
+  --accent-color: #F9BB54;
+  --accent-gradient: #F9BB54;
   --shadow-color: rgba(0, 0, 0, 0.4);
   --bg-progress: #e9ecef;
 }
@@ -30,20 +30,20 @@
 body.dark-mode {
   /* Dark mode colors - "Nice" Dark Palette (Catppuccin/Dracula inspired) */
   --bg-primary: rgba(30, 30, 46, 0.98);
-  --bg-secondary: #1e1e2e;
-  --bg-card: #262636; /* Slightly lighter than bg-secondary */
-  --bg-sidebar: rgba(30, 30, 46, 0.9);
-  --bg-input: #313244;
-  --bg-file-item: #313244;
+  --bg-secondary: #1a1309;
+  --bg-card: #130e07; /* Slightly lighter than bg-secondary */
+  --bg-sidebar: #271c0d;
+  --bg-input: #241a0d;
+  --bg-file-item: #130e07;
   --text-primary: #ffffff;
   --text-secondary: #eeeeee;
   --text-muted: #d0d0d0;
   --text-light: #b0b0b0;
   --border-light: rgba(255, 255, 255, 0.1);
-  --border-color: #45475a;
-  --border-input: #45475a;
+  --border-color: #130e07;
+  --border-input: #F9BB54;
   --shadow-color: rgba(0, 0, 0, 0.5);
-  --bg-progress: #45475a;
+  --bg-progress: #F9BB54;
 }
 
 * {
@@ -55,7 +55,7 @@ body.dark-mode {
 body {
   font-family: "Inter", "Segoe UI", sans-serif;
   /* Maintain requested background gradient */
-  background: linear-gradient(135deg, #4403e8 0%, #eb0058 100%);
+  background: #F9BB54;
   min-height: 100vh;
   overflow: hidden; /* App-like feel */
   color: var(--text-secondary);
@@ -103,6 +103,7 @@ body {
   font-weight: 700;
   letter-spacing: -0.5px;
   color: var(--text-primary);
+  margin-bottom: 4px;
 }
 
 .nav-menu {
@@ -130,9 +131,8 @@ body {
 }
 
 .nav-item.active {
-  background: #4403e8;
+  background: #000;
   color: white;
-  box-shadow: 0 4px 15px rgba(68, 3, 232, 0.3);
 }
 
 .user-profile {
@@ -146,7 +146,7 @@ body {
 .avatar {
   width: 40px;
   height: 40px;
-  background: #000000;
+  background: #F9BB54;
   color: white;
   border-radius: 12px;
   display: flex;
@@ -213,7 +213,6 @@ body {
   padding: 40px;
   border-radius: 20px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
-  max-width: 800px;
   margin: 0 auto;
   transition: background 0.3s ease;
 }
@@ -277,15 +276,16 @@ input[type="text"]:focus {
   padding: 0 24px;
   border-radius: 12px;
   height: 52px; /* Match input height roughly */
-  background: white; /* Fixed light bg */
-  border: 2px solid #f0f0f0; /* Fixed light border */
-  color: #333; /* Fixed dark text */
+  background: #000; /* Fixed light bg */
+  border: 2px solid #000; /* Fixed light border */
+  color: #fff; /* Fixed dark text */
   transition: all 0.2s;
 }
 
 .scan-btn:hover {
-  background: #fbfbfb;
-  border-color: #ddd;
+  background: #000;
+  border-color: #fff;
+  color: #fff;
 }
 
 .format-buttons {
@@ -310,22 +310,22 @@ input[type="text"]:focus {
 }
 
 .format-btn.active {
-  border-color: #4403e8;
-  background: #f0f0ff; /* Solid light purple */
-  color: #4403e8;
+  border-color: #000;
+  background: #000; /* Solid light purple */
+  color: #fff;
 }
 
 .download-btn {
   width: 100%;
   padding: 18px;
-  background: #111; /* Fixed dark background */
-  color: white;
+  background: #000; /* Fixed dark background */
+  color: #fff;
   border-radius: 14px;
   font-size: 16px;
   font-weight: 600;
   margin-top: 20px;
   transition: transform 0.2s, box-shadow 0.2s;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  border: black solid 2px; /* Fixed dark border */
 }
 
 .download-btn:hover {
@@ -779,7 +779,7 @@ button,
 }
 /* --- Theme Toggle --- */
 .theme-toggle-container {
-  padding: 20px;
+  padding: 20px 0px 0px 0px;
   margin-top: auto;
   border-top: 1px solid var(--border-light);
 }
@@ -805,6 +805,7 @@ button,
   display: inline-block;
   width: 40px;
   height: 22px;
+  margin-top: 10px;
 }
 
 .switch input {

@@ -15,13 +15,22 @@ def find_ffmpeg() -> Optional[str]:
     Returns:
         str: Ruta al directorio de FFmpeg si se encuentra, None en caso contrario
     """
+    import shutil
+    
+    # First check system PATH
+    which_ffmpeg = shutil.which('ffmpeg')
+    if which_ffmpeg:
+        # Resolve symlinks to get real path
+        try:
+            real_path = os.path.realpath(which_ffmpeg)
+            if os.access(real_path, os.X_OK):
+                return str(Path(real_path).parent)
+        except Exception:
+            pass
+        return str(Path(which_ffmpeg).parent)
+
     for location in FFMPEG_LOCATIONS:
-        if 'CapCut' in location and os.path.exists(location):
-            # Búsqueda recursiva en CapCut
-            for root, dirs, files in os.walk(location):
-                if 'ffmpeg.exe' in files:
-                    return root
-        elif os.path.exists(os.path.join(location, 'ffmpeg.exe')):
+        if os.path.exists(os.path.join(location, 'ffmpeg.exe')):
             return location
     
     return None

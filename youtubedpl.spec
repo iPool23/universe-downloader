@@ -1,7 +1,6 @@
 
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 
@@ -16,7 +15,7 @@ a = Analysis(
         ('src/views', 'src/views'),
         ('src/static', 'src/static'),
         ('public/imgs', 'public/imgs'),
-    ] + collect_data_files('whisper'),
+    ],
     hiddenimports=[
         'uvicorn.logging',
         'uvicorn.loops',

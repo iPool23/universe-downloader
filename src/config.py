@@ -19,8 +19,8 @@ FFMPEG_LOCATIONS = [
     r'C:\ffmpeg\bin',
     r'C:\Program Files\ffmpeg\bin',
     os.path.expanduser(r'~\scoop\apps\ffmpeg\current\bin'),
+    os.path.expanduser(r'~\scoop\apps\ffmpeg\current\bin'),
     os.path.expanduser(r'~\AppData\Local\Microsoft\WinGet\Links'),
-    os.path.expanduser(r'~\AppData\Local\CapCut\Apps'),
 ]
 
 # Formatos soportados

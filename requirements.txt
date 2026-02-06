@@ -6,4 +6,3 @@ curl-cffi==0.13.0
 pybalt>=2025.7.1
 pystray>=0.19.5
 Pillow>=10.0.0
-openai-whisper>=20231117
