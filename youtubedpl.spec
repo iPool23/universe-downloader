@@ -57,7 +57,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='Downloader_v2.1.0',
+    name='UniverseDownloader',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

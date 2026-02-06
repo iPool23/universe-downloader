@@ -1,7 +1,7 @@
 
-╔══════════════════════════════════════════════════════════╗
-║          UNIVERSE DOWNLOADER - INSTRUCCIONES             ║
-╚══════════════════════════════════════════════════════════╝
+╔═════════════════════════════════════════════════╗
+║       UNIVERSE DOWNLOADER - INSTRUCCIONES       ║
+╚═════════════════════════════════════════════════╝
 
 📦 CONTENIDO DEL PAQUETE:
    • UniverseDownloader.exe - Aplicación principal
@@ -9,42 +9,41 @@
 🚀 CÓMO USAR:
 
    1. Ejecuta "UniverseDownloader.exe"
-   
+
    2. Se abrirá automáticamente tu navegador en:
       http://127.0.0.1:8000
-      
-   3. Pega la URL del video de YouTube
-   
+
+   3. Pega la URL del video (YouTube, TikTok, Facebook, etc.)
+
    4. Selecciona el formato:
       • MP4 - Video en máxima calidad (hasta 4K)
       • MP3 - Audio en alta calidad (M4A/AAC)
-      
+
    5. Haz clic en "Descargar"
-   
-   6. El archivo se guardará en tu carpeta de Descargas
+
+   6. El archivo se guardará en la carpeta "downloads"
 
 ⚠️ NOTAS IMPORTANTES:
 
    • La primera vez puede tardar un poco en iniciar
    • Necesitas conexión a Internet
-   • Para descargar MP4 en máxima calidad, se recomienda
-     tener FFmpeg instalado (opcional)
-   • Los archivos se descargan en la carpeta "downloads"
-     junto al ejecutable
+   • FFmpeg viene incluido para máxima calidad de video
+   • La app se minimiza a la bandeja del sistema (system tray)
 
 🔧 SOLUCIÓN DE PROBLEMAS:
 
    • Si no se abre el navegador automáticamente, abre:
      http://127.0.0.1:8000
-     
+
    • Si aparece un error de firewall, permite el acceso
-   
-   • Para cerrar la aplicación, cierra la ventana de consola
 
-📝 FORMATOS SOPORTADOS:
+   • Para cerrar la aplicación, haz clic derecho en el
+     icono de la bandeja del sistema y selecciona "Salir"
 
-   • MP4: Video con audio (máxima calidad disponible)
-   • M4A: Audio de alta calidad (AAC)
+📝 PLATAFORMAS SOPORTADAS:
+
+   • YouTube, TikTok, Facebook, Instagram, Twitter/X
+   • Y muchas más (usa yt-dlp como motor de descarga)
 
 ═══════════════════════════════════════════════════════════
 
