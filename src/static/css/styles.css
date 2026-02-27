@@ -902,3 +902,38 @@ input:checked + .slider:before {
   max-height: 70vh;
   outline: none;
 }
+
+/* --- Upload Area --- */
+.upload-zone {
+  border: 2px dashed #e2e8f0;
+  border-radius: 12px;
+  padding: 40px;
+  text-align: center;
+  background: #f8fafc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 20px;
+}
+
+.upload-zone:hover, .upload-zone.dragover {
+  border-color: var(--accent-color);
+  background: #f1f5f9;
+}
+
+.upload-content h3 {
+  font-size: 18px;
+  margin-bottom: 8px;
+  color: #1a1a1a;
+}
+
+.upload-content p {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.disabled-btn {
+  background: #e2e8f0 !important;
+  color: #94a3b8 !important;
+  border-color: #e2e8f0 !important;
+  cursor: not-allowed !important;
+}

@@ -79,10 +79,10 @@ navItems.forEach(item => {
 
         // Simple text check
         const text = item.innerText;
-        const isDownloads = text.indexOf('Descargas') !== -1;
+        const isConverter = text.indexOf('Convertir') !== -1;
         const isHome = text.indexOf('Inicio') !== -1;
 
-        if (!isDownloads && !isHome) return;
+        if (!isConverter && !isHome) return;
 
         // Visual Active State
         navItems.forEach(nav => nav.classList.remove('active'));
@@ -90,142 +90,111 @@ navItems.forEach(item => {
 
         // View Switching
         const downloaderView = document.getElementById('downloaderView');
-        const downloadsView = document.getElementById('downloadsView');
+        const converterView = document.getElementById('converterView');
 
         // Hide all first
         if (downloaderView) downloaderView.style.display = 'none';
-        if (downloadsView) downloadsView.style.display = 'none';
+        if (converterView) converterView.style.display = 'none';
 
         if (isHome) {
             if (downloaderView) downloaderView.style.display = 'block';
-        } else if (isDownloads) {
-            if (downloadsView) downloadsView.style.display = 'block';
-            loadDownloads();
+        } else if (isConverter) {
+            if (converterView) converterView.style.display = 'block';
         }
     });
 });
 
-async function loadDownloads() {
-    const list = document.getElementById('downloadsList');
-    list.innerHTML = '<div class="loading-spinner" style="margin: 20px auto;"></div>';
+// =====================================================
+// UPLOAD & CONVERSION LOGIC
+// =====================================================
 
-    try {
-        const response = await fetch('/api/downloads');
-        let files = await response.json();
+let selectedVideoFile = null;
 
-        // Filtrar archivos .part (descargas incompletas)
-        files = files.filter(file => !file.filename.endsWith('.part'));
+// Initialize after page load
+document.addEventListener('DOMContentLoaded', () => {
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('videoFileInput');
 
-        if (files.length === 0) {
-            list.innerHTML = '<div style="text-align:center; padding: 40px; color: #888;">No hay descargas recientes</div>';
-            return;
+    if (uploadZone && fileInput) {
+        // Prevent default drag behaviors
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
         }
 
-        list.innerHTML = files.map(file => {
-            const escapedPath = file.path.replace(/\\/g, '\\\\');
-            const isMedia = file.type === 'video' || file.type === 'audio';
-
-            // Determinar ícono
-            let icon = 'file';
-            if (file.type === 'video') icon = 'film';
-            else if (file.type === 'audio') icon = 'music';
-
-            // Construir botones según el tipo de archivo
-            let actionsHtml = '';
-
-            if (isMedia) {
-                // Botón de conversión a H.264 solo para videos
-                const convertBtn = file.type === 'video' && !file.filename.includes('_h264')
-                    ? `<button class="action-btn" title="Convertir a H.264" onclick="convertToH264('${file.filename}')">
-                           <i data-lucide="repeat" style="width: 16px;"></i>
-                       </button>`
-                    : '';
-
-                actionsHtml = `
-                    <button class="action-btn play" title="Reproducir" onclick="playMedia('${file.filename}', '${file.type}')">
-                        <i data-lucide="play" style="width: 16px;"></i>
-                    </button>
-                    ${convertBtn}
-                    <button class="action-btn" title="Abrir Ubicación" onclick="openFolder('${escapedPath}')">
-                        <i data-lucide="folder" style="width: 16px;"></i>
-                    </button>
-                `;
-            } else {
-                // Otro tipo de archivo: solo carpeta
-                actionsHtml = `
-                    <button class="action-btn" title="Abrir Ubicación" onclick="openFolder('${escapedPath}')">
-                        <i data-lucide="folder" style="width: 16px;"></i>
-                    </button>
-                `;
-            }
-
-            return `
-                <div class="file-item">
-                    <div class="file-icon">
-                        <i data-lucide="${icon}"></i>
-                    </div>
-                    <div class="file-info">
-                        <div class="file-name">${file.filename}</div>
-                        <div class="file-meta">
-                            <span>${file.size}</span>
-                            <span>•</span>
-                            <span>${file.created_at}</span>
-                        </div>
-                    </div>
-                    <div class="file-actions">
-                        ${actionsHtml}
-                    </div>
-                </div>
-            `;
-        }).join('');
-        lucide.createIcons();
-    } catch (error) {
-        list.innerHTML = '<div style="color: red; text-align: center;">Error al cargar descargas</div>';
-    }
-}
-
-function playMedia(filename, type) {
-    const modal = document.getElementById('mediaPlayerModal');
-    const content = document.getElementById('playerContent');
-    const title = document.getElementById('playerTitle');
-
-    title.textContent = filename;
-
-    // Prevent caching issues by adding timestamp
-    const src = `/content/${encodeURIComponent(filename)}?t=${new Date().getTime()}`;
-
-    if (type === 'video') {
-        content.innerHTML = `<video controls autoplay src="${src}"></video>`;
-    } else {
-        content.innerHTML = `
-                <div style="padding: 40px; text-align: center; width: 100%;">
-                <i data-lucide="music" style="width: 64px; height: 64px; color: #4403E8; margin-bottom: 20px;"></i>
-                <audio controls autoplay src="${src}" style="width: 100%;"></audio>
-            </div >
-                `;
-        lucide.createIcons();
-    }
-
-    modal.classList.add('show');
-}
-
-function closePlayer() {
-    const modal = document.getElementById('mediaPlayerModal');
-    const content = document.getElementById('playerContent');
-    content.innerHTML = ''; // Stop playback
-    modal.classList.remove('show');
-}
-
-async function openFolder(path) {
-    try {
-        await fetch('/api/open-folder', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: path })
+        // Highlight drop zone
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadZone.addEventListener(eventName, () => uploadZone.classList.add('dragover'), false);
         });
-    } catch (error) {
-        console.error('Error opening folder:', error);
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadZone.addEventListener(eventName, () => uploadZone.classList.remove('dragover'), false);
+        });
+
+        // Handle dropped files
+        uploadZone.addEventListener('drop', (e) => {
+            uploadZone.classList.remove('dragover');
+            let dt = e.dataTransfer;
+            handleFiles(dt.files);
+        });
+
+        // Handle file input change
+        fileInput.addEventListener('change', function () {
+            handleFiles(this.files);
+        });
     }
+});
+
+function handleFiles(files) {
+    if (files.length === 0) return;
+    const file = files[0];
+
+    // Validate size (500MB max)
+    if (file.size > 500 * 1024 * 1024) {
+        showModal('error', 'alert-circle', 'Error', 'El archivo supera el límite de 500MB');
+        return;
+    }
+
+    // Validate type
+    const validExts = ['.mp4', '.mkv', '.avi', '.mov', '.webm'];
+    const filename = file.name.toLowerCase();
+    if (!validExts.some(ext => filename.endsWith(ext))) {
+        showModal('error', 'alert-circle', 'Error', 'Formato no soportado. Usa MP4, MKV, AVI, MOV o WEBM.');
+        return;
+    }
+
+    selectedVideoFile = file;
+
+    // Update UI
+    const title = document.getElementById('uploadTitle');
+    const subtitle = document.getElementById('uploadSubtitle');
+    const btn = document.getElementById('uploadConvertBtn');
+
+    title.innerHTML = `<i data-lucide="file-video" style="width: 24px; vertical-align: middle;"></i> ${file.name}`;
+    subtitle.innerHTML = `${(file.size / (1024 * 1024)).toFixed(1)} MB - Listo para convertir`;
+
+    btn.classList.remove('disabled-btn');
+    btn.innerText = 'Subir y Convertir a H.264';
+
+    lucide.createIcons();
+}
+
+function resetUploadZone() {
+    selectedVideoFile = null;
+    const title = document.getElementById('uploadTitle');
+    const subtitle = document.getElementById('uploadSubtitle');
+    const btn = document.getElementById('uploadConvertBtn');
+
+    title.innerHTML = 'Haz clic o arrastra un archivo aquí';
+    subtitle.innerHTML = 'Formatos soportados: MP4, WEBM, MKV, AVI, MOV (Máx 500MB)';
+
+    btn.classList.add('disabled-btn');
+    btn.innerText = 'Selecciona un archivo primero';
+    document.getElementById('videoFileInput').value = '';
 }
 
 async function scanVideo() {
@@ -560,22 +529,28 @@ function closeModal() {
 
 let currentConvertId = null;
 
-async function convertToH264(filename) {
-    showConvertProgressModal();
+async function uploadAndConvert() {
+    if (!selectedVideoFile) return;
+
+    const btn = document.getElementById('uploadConvertBtn');
+    btn.disabled = true;
+
+    const formData = new FormData();
+    formData.append('file', selectedVideoFile);
 
     try {
-        // Iniciar conversión en segundo plano
-        const startResponse = await fetch('/api/convert', {
+        showConvertProgressModal();
+        document.getElementById('convertProgressDetails').textContent = 'Subiendo video (esto puede tardar unos momentos)...';
+
+        // Use proper fetch for FormData (no Content-Type set manually)
+        const startResponse = await fetch('/api/upload-convert', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ filename: filename })
+            body: formData
         });
 
         if (!startResponse.ok) {
             const error = await startResponse.json();
-            throw new Error(error.detail || 'Error al iniciar conversión');
+            throw new Error(error.detail || 'Error en la subida y conversión');
         }
 
         const { convert_id } = await startResponse.json();
@@ -584,7 +559,7 @@ async function convertToH264(filename) {
         // Polling para obtener progreso
         let completed = false;
         while (!completed) {
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar 1s
+            await new Promise(resolve => setTimeout(resolve, 1000));
 
             const progressResponse = await fetch(`/api/convert/progress/${convert_id}`);
             const progress = await progressResponse.json();
@@ -595,17 +570,33 @@ async function convertToH264(filename) {
                 completed = true;
                 currentConvertId = null;
 
-                showModal('success', 'check-circle-2', '¡Conversión Completada!', 'El archivo H.264 se ha creado correctamente');
+                // Download the file
+                closeModal();
+                showModal('loading', 'loader', 'Descargando...', 'Tu archivo H.264 está listo. Descargando automáticamente...');
 
-                // Recargar lista de descargas para mostrar el nuevo archivo
-                loadDownloads();
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = `/api/convert/download/${convert_id}`;
+                a.download = progress.filename || 'convertido_h264.mp4';
+                document.body.appendChild(a);
+                a.click();
+
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    closeModal();
+                    showModal('success', 'check-circle-2', '¡Completado!', 'Tu video ha sido convertido y descargado.');
+                    resetUploadZone();
+                }, 2000);
 
             } else if (progress.status === 'error') {
                 throw new Error(progress.error || 'Error durante la conversión');
             }
         }
     } catch (error) {
+        closeModal();
         showModal('error', 'x-circle', 'Error', error.message);
+    } finally {
+        if (btn) btn.disabled = false;
     }
 }
 

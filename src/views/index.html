@@ -1,152 +1,149 @@
 <!DOCTYPE html>
 <html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="author" content="Pool Anthony Deza Millones" />
-    <meta
-      name="description"
-      content="Downloader - Descarga videos y audio de múltiples plataformas en máxima calidad"
-    />
-    <meta
-      name="keywords"
-      content="youtube, kick, twitch, downloader, video, audio, mp3, mp4"
-    />
-    <meta name="theme-color" content="#F9BB54" />
-    <title>Downloader</title>
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="author" content="Pool Anthony Deza Millones" />
+  <meta name="description" content="Downloader - Descarga videos y audio de múltiples plataformas en máxima calidad" />
+  <meta name="keywords" content="youtube, kick, twitch, downloader, video, audio, mp3, mp4" />
+  <meta name="theme-color" content="#F9BB54" />
+  <title>Downloader</title>
 
-    <link rel="stylesheet" href="/static/css/styles.css?v=2.1.0" />
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-  </head>
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
 
-  <body>
-    <div class="dashboard-wrapper">
-      <!-- Sidebar -->
-      <aside class="sidebar">
-        <div class="brand">
-          <div class="logo-icon"><i data-lucide="youtube"></i></div>
-          <h2>Downloader</h2>
-        </div>
+  <link rel="stylesheet" href="/static/css/styles.css?v=2.1.0" />
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
 
-        <nav class="nav-menu">
-          <a href="#" class="nav-item active">
-            <span class="icon"><i data-lucide="home"></i></span> Inicio
-          </a>
-          <a href="#" class="nav-item">
-            <span class="icon"><i data-lucide="folder-open"></i></span>
-            Descargas
-          </a>
-        </nav>
-
-        <div class="theme-toggle-container">
-          <div class="theme-toggle">
-            <i data-lucide="sun"></i>
-            <label class="switch">
-              <input type="checkbox" id="themeSwitch" />
-              <span class="slider"></span>
-            </label>
-            <i data-lucide="moon"></i>
-          </div>
-        </div>
-      </aside>
-
-      <!-- Main Content -->
-      <main class="main-content">
-        <header class="top-header">
-          <h1>Panel de Descarga</h1>
-        </header>
-
-        <div id="downloaderView" class="content-card">
-          <div class="card-header">
-            <h2>Nueva Descarga</h2>
-            <p>Pega el enlace de YouTube para comenzar</p>
-          </div>
-
-          <div class="input-group">
-            <label for="url">URL del Video:</label>
-            <div class="url-input-container">
-              <input
-                type="text"
-                id="url"
-                placeholder="https://www.youtube.com/watch?v=... o cualquier enlace"
-              />
-              <button id="scanBtn" class="scan-btn" onclick="scanVideo()">
-                <i data-lucide="search" style="width: 18px; color: white"></i> Escanear
-              </button>
-            </div>
-          </div>
-
-          <div id="videoInfo" class="video-info" style="display: none">
-            <!-- Contenido dinámico -->
-          </div>
-
-          <div class="input-group">
-            <label>Formato:</label>
-            <div class="format-buttons">
-              <button class="format-btn active" data-format="mp4">
-                <i
-                  data-lucide="film"
-                  style="width: 18px"
-                ></i>
-                MP4 (Video)
-              </button>
-              <button class="format-btn" data-format="mp3">
-                <i
-                  data-lucide="music"
-                  style="width: 18px"
-                ></i>
-                MP3 (Audio)
-              </button>
-            </div>
-          </div>
-
-          <button class="download-btn" onclick="download()">
-            Descargar Archivo
-          </button>
-        </div>
-
-        <!-- Downloads View (Hidden by default) -->
-        <div id="downloadsView" class="content-card" style="display: none">
-          <div class="card-header">
-            <h2>Descargas</h2>
-            <p>Archivos descargados recientemente</p>
-          </div>
-          <div id="downloadsList" class="downloads-list">
-            <!-- Dynamic List -->
-          </div>
-        </div>
-      </main>
-    </div>
-
-    <div class="modal-overlay" id="modalOverlay">
-      <div class="modal">
-        <div id="modalContent"></div>
+<body>
+  <div class="dashboard-wrapper">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo-icon"><i data-lucide="youtube"></i></div>
+        <h2>Downloader</h2>
       </div>
-    </div>
 
-    <!-- Media Player Modal -->
-    <div class="modal-overlay" id="mediaPlayerModal">
-      <div class="modal player-modal">
-        <div class="modal-header">
-          <h3 id="playerTitle">Reproduciendo...</h3>
-          <button class="close-btn" onclick="closePlayer()">
-            <i data-lucide="x"></i>
-          </button>
-        </div>
-        <div class="player-content" id="playerContent">
-          <!-- Video or Audio tag injected here -->
+      <nav class="nav-menu">
+        <a href="#" class="nav-item active">
+          <span class="icon"><i data-lucide="home"></i></span> Inicio
+        </a>
+        <a href="#" class="nav-item">
+          <span class="icon"><i data-lucide="repeat"></i></span>
+          Convertir
+        </a>
+      </nav>
+
+      <div class="theme-toggle-container">
+        <div class="theme-toggle">
+          <i data-lucide="sun"></i>
+          <label class="switch">
+            <input type="checkbox" id="themeSwitch" />
+            <span class="slider"></span>
+          </label>
+          <i data-lucide="moon"></i>
         </div>
       </div>
-    </div>
+    </aside>
 
-    <script src="/static/js/app.js?v=2.1.0"></script>
-    <script>
-      lucide.createIcons();
-    </script>
-  </body>
+    <!-- Main Content -->
+    <main class="main-content">
+      <header class="top-header">
+        <h1>Panel de Descarga</h1>
+      </header>
+
+      <div id="downloaderView" class="content-card">
+        <div class="card-header">
+          <h2>Nueva Descarga</h2>
+          <p>Pega el enlace de YouTube para comenzar</p>
+        </div>
+
+        <div class="input-group">
+          <label for="url">URL del Video:</label>
+          <div class="url-input-container">
+            <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=... o cualquier enlace" />
+            <button id="scanBtn" class="scan-btn" onclick="scanVideo()">
+              <i data-lucide="search" style="width: 18px; color: white"></i> Escanear
+            </button>
+          </div>
+        </div>
+
+        <div id="videoInfo" class="video-info" style="display: none">
+          <!-- Contenido dinámico -->
+        </div>
+
+        <div class="input-group">
+          <label>Formato:</label>
+          <div class="format-buttons">
+            <button class="format-btn active" data-format="mp4">
+              <i data-lucide="film" style="width: 18px"></i>
+              MP4 (Video)
+            </button>
+            <button class="format-btn" data-format="mp3">
+              <i data-lucide="music" style="width: 18px"></i>
+              MP3 (Audio)
+            </button>
+          </div>
+        </div>
+
+        <button class="download-btn" onclick="download()">
+          Descargar Archivo
+        </button>
+      </div>
+
+      <!-- Converter View (Hidden by default) -->
+      <div id="converterView" class="content-card" style="display: none">
+        <div class="card-header">
+          <h2>Convertir a H.264</h2>
+          <p>Sube un video para convertirlo a un formato 100% compatible (MP4 H.264)</p>
+        </div>
+
+        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('videoFileInput').click()">
+          <input type="file" id="videoFileInput" accept=".mp4,.webm,.mkv,.avi,.mov" style="display: none" />
+          <div class="upload-content">
+            <i data-lucide="upload-cloud" class="upload-icon"
+              style="width: 48px; height: 48px; color: var(--accent-color); margin-bottom: 15px;"></i>
+            <h3 id="uploadTitle">Haz clic o arrastra un archivo aquí</h3>
+            <p id="uploadSubtitle">Formatos soportados: MP4, WEBM, MKV, AVI, MOV (Máx 500MB)</p>
+          </div>
+        </div>
+
+        <button class="download-btn disabled-btn" id="uploadConvertBtn" onclick="uploadAndConvert()">
+          Selecciona un archivo primero
+        </button>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div id="modalContent"></div>
+    </div>
+  </div>
+
+  <!-- Media Player Modal -->
+  <div class="modal-overlay" id="mediaPlayerModal">
+    <div class="modal player-modal">
+      <div class="modal-header">
+        <h3 id="playerTitle">Reproduciendo...</h3>
+        <button class="close-btn" onclick="closePlayer()">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="player-content" id="playerContent">
+        <!-- Video or Audio tag injected here -->
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js?v=2.1.0"></script>
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+
 </html>

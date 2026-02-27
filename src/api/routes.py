@@ -1,10 +1,12 @@
 """Rutas de la API"""
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
+from starlette.background import BackgroundTask
 import uuid
 import sys
 import asyncio
 import json
+import shutil
 from pathlib import Path
 from typing import List
 import os
@@ -43,40 +45,40 @@ async def scan_video(url: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/downloads", response_model=List[DownloadFile])
-async def list_downloads():
-    files = []
-    # Ensure directory exists
-    downloads_path = Path(DOWNLOADS_DIR)
-    if not downloads_path.exists():
-        return []
-
-    for f in downloads_path.glob('*'):
-        if f.is_file():
-            # Get basic info
-            size_mb = f.stat().st_size / (1024 * 1024)
-            created = datetime.fromtimestamp(f.stat().st_mtime).strftime('%Y-%m-%d %H:%M')
-            
-            # Determine type
-            ext = f.suffix.lower()
-            if ext in ['.mp4', '.mkv', '.webm']:
-                f_type = 'video'
-            elif ext in ['.mp3', '.m4a', '.wav']:
-                f_type = 'audio'
-            else:
-                f_type = 'file'
-
-            files.append(DownloadFile(
-                filename=f.name,
-                size=f"{size_mb:.1f} MB",
-                created_at=created,
-                path=str(f),
-                type=f_type
-            ))
-    
-    # Sort by newest first
-    files.sort(key=lambda x: x.created_at, reverse=True)
-    return files
+# @router.get("/downloads", response_model=List[DownloadFile])
+# async def list_downloads():
+#     files = []
+#     # Ensure directory exists
+#     downloads_path = Path(DOWNLOADS_DIR)
+#     if not downloads_path.exists():
+#         return []
+# 
+#     for f in downloads_path.glob('*'):
+#         if f.is_file():
+#             # Get basic info
+#             size_mb = f.stat().st_size / (1024 * 1024)
+#             created = datetime.fromtimestamp(f.stat().st_mtime).strftime('%Y-%m-%d %H:%M')
+#             
+#             # Determine type
+#             ext = f.suffix.lower()
+#             if ext in ['.mp4', '.mkv', '.webm']:
+#                 f_type = 'video'
+#             elif ext in ['.mp3', '.m4a', '.wav']:
+#                 f_type = 'audio'
+#             else:
+#                 f_type = 'file'
+# 
+#             files.append(DownloadFile(
+#                 filename=f.name,
+#                 size=f"{size_mb:.1f} MB",
+#                 created_at=created,
+#                 path=str(f),
+#                 type=f_type
+#             ))
+#     
+#     # Sort by newest first
+#     files.sort(key=lambda x: x.created_at, reverse=True)
+#     return files
 
 class DownloadStartResponse(BaseModel):
     download_id: str
@@ -194,24 +196,23 @@ async def download_video(request: DownloadRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-class OpenFolderRequest(BaseModel):
-    path: str
-
-@router.post("/open-folder")
-async def open_folder(request: OpenFolderRequest):
-    try:
-        path = os.path.normpath(request.path)
-        if not os.path.exists(path):
-            raise HTTPException(status_code=404, detail="Archivo no encontrado")
-        
-        # Windows command to select file in explorer
-        # Using shell=True might help with window focus slightly, but it's Windows managed.
-        import subprocess
-        cmd = f'explorer /select,"{path}"'
-        subprocess.Popen(cmd, shell=True)
-        return {"status": "ok"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# class OpenFolderRequest(BaseModel):
+#     path: str
+# 
+# @router.post("/open-folder")
+# async def open_folder(request: OpenFolderRequest):
+#     try:
+#         path = os.path.normpath(request.path)
+#         if not os.path.exists(path):
+#             raise HTTPException(status_code=404, detail="Archivo no encontrado")
+#         
+#         # Windows command to select file in explorer
+#         import subprocess
+#         cmd = f'explorer /select,"{path}"'
+#         subprocess.Popen(cmd, shell=True)
+#         return {"status": "ok"}
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
 # =====================================================
@@ -236,6 +237,7 @@ def run_convert_task(convert_id: str, file_path: str):
             convert_id=convert_id
         )
         conversion_results[convert_id] = {
+            'input_path': str(file_path),
             'output_path': str(output_path),
             'output_name': output_name
         }
@@ -246,23 +248,30 @@ def run_convert_task(convert_id: str, file_path: str):
             'error': str(e)
         }
 
-@router.post("/convert", response_model=ConvertStartResponse)
-async def start_conversion(request: ConvertRequest, background_tasks: BackgroundTasks):
+@router.post("/upload-convert", response_model=ConvertStartResponse)
+async def upload_and_convert(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     """
-    Inicia una conversión a H.264 en segundo plano.
+    Sube un archivo e inicia la conversión a H.264 en segundo plano.
     """
-    # Buscar el archivo en la carpeta de descargas
-    file_path = Path(DOWNLOADS_DIR) / request.filename
-    
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    
-    # Verificar que es un archivo de video
     valid_extensions = {'.mp4', '.webm', '.mkv', '.avi', '.mov'}
-    if file_path.suffix.lower() not in valid_extensions:
-        raise HTTPException(status_code=400, detail="Formato de archivo no soportado")
+    ext = Path(file.filename).suffix.lower()
     
+    if ext not in valid_extensions:
+        raise HTTPException(status_code=400, detail="Formato de archivo no soportado")
+        
     convert_id = str(uuid.uuid4())[:8]
+    
+    # Save the uploaded file to DOWNLOADS_DIR
+    import re
+    safe_name = re.sub(r'[^\w\s-]', '', Path(file.filename).stem).strip()
+    save_filename = f"upload_{convert_id}_{safe_name}{ext}"
+    file_path = Path(DOWNLOADS_DIR) / save_filename
+    
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error guardando archivo: {str(e)}")
     
     # Inicializar progreso
     conversion_progress[convert_id] = {
@@ -274,6 +283,28 @@ async def start_conversion(request: ConvertRequest, background_tasks: Background
     background_tasks.add_task(run_convert_task, convert_id, str(file_path))
     return ConvertStartResponse(convert_id=convert_id, message="Conversión iniciada")
 
+@router.post("/convert", response_model=ConvertStartResponse)
+async def start_conversion(request: ConvertRequest, background_tasks: BackgroundTasks):
+    """
+    Inicia una conversión a H.264 para un archivo local existente. (Mantener para test/compatibilidad remota)
+    """
+    file_path = Path(DOWNLOADS_DIR) / request.filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    
+    valid_extensions = {'.mp4', '.webm', '.mkv', '.avi', '.mov'}
+    if file_path.suffix.lower() not in valid_extensions:
+        raise HTTPException(status_code=400, detail="Formato de archivo no soportado")
+    
+    convert_id = str(uuid.uuid4())[:8]
+    conversion_progress[convert_id] = {
+        'status': 'starting',
+        'percent': 0,
+        'message': 'Iniciando conversión...'
+    }
+    background_tasks.add_task(run_convert_task, convert_id, str(file_path))
+    return ConvertStartResponse(convert_id=convert_id, message="Conversión iniciada")
+
 @router.get("/convert/progress/{convert_id}")
 async def get_conversion_progress(convert_id: str):
     """
@@ -282,10 +313,46 @@ async def get_conversion_progress(convert_id: str):
     progress = conversion_progress.get(convert_id, {'status': 'unknown', 'percent': 0})
     return progress
 
+@router.get("/convert/download/{convert_id}")
+async def download_conversion_file(convert_id: str):
+    """
+    Obtiene el archivo convertido pidiendo al navegador que lo descargue 
+    formalmente y luego se auto-destruyen ambos archivos (entrada y salida).
+    """
+    result = conversion_results.get(convert_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Conversión no encontrada")
+    
+    output_path = Path(result['output_path'])
+    input_path = Path(result.get('input_path', ''))
+    
+    if not output_path.exists():
+        raise HTTPException(status_code=404, detail="Archivo convertido no encontrado")
+        
+    def cleanup_files():
+        try:
+            if input_path.exists():
+                input_path.unlink()
+        except: pass
+        try:
+            if output_path.exists():
+                output_path.unlink()
+        except: pass
+        # Remover progreso para limpiar ram
+        conversion_progress.pop(convert_id, None)
+        conversion_results.pop(convert_id, None)
+
+    return FileResponse(
+        path=output_path,
+        filename=result['output_name'],
+        media_type='video/mp4',
+        background=BackgroundTask(cleanup_files)
+    )
+
 @router.get("/convert/file/{convert_id}")
 async def get_conversion_file(convert_id: str):
     """
-    Obtiene el archivo convertido una vez completada.
+    Mantiene la ruta local / file direct.
     """
     result = conversion_results.get(convert_id)
     if not result:
