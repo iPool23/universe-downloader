@@ -1,6 +1,6 @@
-fastapi==0.104.1
-uvicorn==0.24.0
-pydantic==2.5.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+pydantic>=2.10.0
 yt-dlp>=2025.12.08
 curl-cffi==0.13.0
 pybalt>=2025.7.1
