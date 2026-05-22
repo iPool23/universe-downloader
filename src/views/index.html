@@ -408,6 +408,106 @@
             </div>
           </div>
 
+          <!-- Advanced AI Options Panel -->
+          <div class="img-controls-grid" style="margin-bottom: 20px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+            <!-- Selector de Modelo de IA -->
+            <div class="input-group">
+              <label style="font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; display: block;">
+                <i data-lucide="brain-circuit" style="width: 15px; height: 15px; display: inline-block; vertical-align: middle; margin-right: 4px; color: var(--accent-color);"></i> Modelo de IA:
+              </label>
+              <select id="rbModelSelect" class="quality-select" style="max-width: 100%; width: 100%;">
+                <option value="birefnet-portrait" selected>Personas (Estudio Pro - BiRefNet)</option>
+                <option value="birefnet-general">Alta Precisión General (Pro - BiRefNet)</option>
+                <option value="u2net_human_seg">Personas (U2Net - Rápido)</option>
+                <option value="u2net">General (Estándar)</option>
+                <option value="isnet-general">Alta Precisión (General - ISNet)</option>
+              </select>
+            </div>
+
+            <!-- Bordes Suaves (Alpha Matting) -->
+            <div class="input-group">
+              <label style="display: flex; align-items: center; justify-content: space-between; font-weight: 600; color: var(--text-secondary); cursor: pointer;">
+                <span>
+                  <i data-lucide="sparkles" style="width: 15px; height: 15px; display: inline-block; vertical-align: middle; margin-right: 4px; color: var(--accent-color);"></i> Bordes Suaves:
+                </span>
+                <label class="switch" style="margin-top: 0; margin-bottom: 10px;">
+                  <input type="checkbox" id="rbAlphaMatting" checked />
+                  <span class="slider"></span>
+                </label>
+              </label>
+              <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
+                Matiza cabello, plumas y bordes complejos con transparencias suaves.
+              </div>
+            </div>
+
+            <!-- Post-procesado (Eliminar Ruido) -->
+            <div class="input-group">
+              <label style="display: flex; align-items: center; justify-content: space-between; font-weight: 600; color: var(--text-secondary); cursor: pointer;">
+                <span>
+                  <i data-lucide="shield-check" style="width: 15px; height: 15px; display: inline-block; vertical-align: middle; margin-right: 4px; color: var(--accent-color);"></i> Limpiar Máscara:
+                </span>
+                <label class="switch" style="margin-top: 0; margin-bottom: 10px;">
+                  <input type="checkbox" id="rbPostProcess" />
+                  <span class="slider"></span>
+                </label>
+              </label>
+              <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
+                Elimina pequeñas imperfecciones aisladas y cierra huecos.
+              </div>
+            </div>
+
+            <!-- Descontaminar Color (Eliminar Halos) -->
+            <div class="input-group">
+              <label style="display: flex; align-items: center; justify-content: space-between; font-weight: 600; color: var(--text-secondary); cursor: pointer;">
+                <span>
+                  <i data-lucide="droplet" style="width: 15px; height: 15px; display: inline-block; vertical-align: middle; margin-right: 4px; color: var(--accent-color);"></i> Descontaminar Bordes:
+                </span>
+                <label class="switch" style="margin-top: 0; margin-bottom: 10px;">
+                  <input type="checkbox" id="rbDecontaminate" />
+                  <span class="slider"></span>
+                </label>
+              </label>
+              <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
+                Elimina reflejos blancos y azules (halos de luz de fondo) en el cabello y los bordes.
+              </div>
+            </div>
+          </div>
+
+          <!-- Opciones adicionales de Alpha Matting -->
+          <div id="rbAlphaMattingOptions" style="display: block; border-top: 1px dashed var(--border-color); padding-top: 20px; margin-bottom: 20px;">
+            <div class="img-controls-grid">
+              <!-- Detalle de Borde (Slider, interactivo) -->
+              <div class="input-group" id="rbErodeGroup">
+                <label style="font-weight: 600; color: var(--text-secondary);">Grosor del Detalle: <span id="rbErodeValue" style="color: var(--accent-color);">5</span>px</label>
+                <input type="range" id="rbErodeSlider" min="1" max="30" value="5" class="quality-slider" />
+                <div class="quality-hints">
+                  <span>Fino (1px)</span>
+                  <span>Ancho (30px)</span>
+                </div>
+              </div>
+
+              <!-- Umbral de Fondo (Sensibilidad Fondo) -->
+              <div class="input-group">
+                <label style="font-weight: 600; color: var(--text-secondary);">Sensibilidad Fondo: <span id="rbBgThresholdValue" style="color: var(--accent-color);">10</span></label>
+                <input type="range" id="rbBgThresholdSlider" min="1" max="100" value="10" class="quality-slider" />
+                <div class="quality-hints">
+                  <span>Conservador (1)</span>
+                  <span>Agresivo (100)</span>
+                </div>
+              </div>
+
+              <!-- Umbral de Frente (Sensibilidad Frente) -->
+              <div class="input-group">
+                <label style="font-weight: 600; color: var(--text-secondary);">Sensibilidad Frente: <span id="rbFgThresholdValue" style="color: var(--accent-color);">240</span></label>
+                <input type="range" id="rbFgThresholdSlider" min="100" max="255" value="240" class="quality-slider" />
+                <div class="quality-hints">
+                  <span>Suave (100)</span>
+                  <span>Sólido (255)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <button class="download-btn" id="rbProcessBtn" onclick="runRembg()">
             <i data-lucide="scissors" style="width: 18px;"></i> Quitar Fondo
           </button>

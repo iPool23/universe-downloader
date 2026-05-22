@@ -1216,6 +1216,39 @@ if (rbFileInput) {
     });
 }
 
+// Interactividad para las configuraciones avanzadas de rembg
+const rbAlphaMatting = document.getElementById('rbAlphaMatting');
+const rbAlphaMattingOptions = document.getElementById('rbAlphaMattingOptions');
+if (rbAlphaMatting && rbAlphaMattingOptions) {
+    rbAlphaMatting.addEventListener('change', () => {
+        rbAlphaMattingOptions.style.display = rbAlphaMatting.checked ? 'block' : 'none';
+    });
+}
+
+const rbErodeSlider = document.getElementById('rbErodeSlider');
+const rbErodeValue = document.getElementById('rbErodeValue');
+if (rbErodeSlider && rbErodeValue) {
+    rbErodeSlider.addEventListener('input', () => {
+        rbErodeValue.textContent = rbErodeSlider.value;
+    });
+}
+
+const rbBgThresholdSlider = document.getElementById('rbBgThresholdSlider');
+const rbBgThresholdValue = document.getElementById('rbBgThresholdValue');
+if (rbBgThresholdSlider && rbBgThresholdValue) {
+    rbBgThresholdSlider.addEventListener('input', () => {
+        rbBgThresholdValue.textContent = rbBgThresholdSlider.value;
+    });
+}
+
+const rbFgThresholdSlider = document.getElementById('rbFgThresholdSlider');
+const rbFgThresholdValue = document.getElementById('rbFgThresholdValue');
+if (rbFgThresholdSlider && rbFgThresholdValue) {
+    rbFgThresholdSlider.addEventListener('input', () => {
+        rbFgThresholdValue.textContent = rbFgThresholdSlider.value;
+    });
+}
+
 // Drag and drop for rembg upload zone
 const rbUploadZone = document.getElementById('rbUploadZone');
 if (rbUploadZone) {
@@ -1251,6 +1284,40 @@ function resetRembg() {
     document.getElementById('rbResetBtn').style.display = 'none';
     document.getElementById('rbResultInfo').style.display = 'none';
     
+    // Restablecer ajustes avanzados a valores por defecto
+    const modelSelect = document.getElementById('rbModelSelect');
+    if (modelSelect) modelSelect.value = 'birefnet-portrait';
+    
+    const alphaMatting = document.getElementById('rbAlphaMatting');
+    if (alphaMatting) alphaMatting.checked = true;
+    
+    const postProcess = document.getElementById('rbPostProcess');
+    if (postProcess) postProcess.checked = false;
+
+    const decontaminate = document.getElementById('rbDecontaminate');
+    if (decontaminate) decontaminate.checked = false;
+    
+    const erodeSlider = document.getElementById('rbErodeSlider');
+    if (erodeSlider) erodeSlider.value = 5;
+    
+    const erodeValue = document.getElementById('rbErodeValue');
+    if (erodeValue) erodeValue.textContent = '5';
+    
+    const bgThresholdSlider = document.getElementById('rbBgThresholdSlider');
+    if (bgThresholdSlider) bgThresholdSlider.value = 10;
+    
+    const bgThresholdValue = document.getElementById('rbBgThresholdValue');
+    if (bgThresholdValue) bgThresholdValue.textContent = '10';
+
+    const fgThresholdSlider = document.getElementById('rbFgThresholdSlider');
+    if (fgThresholdSlider) fgThresholdSlider.value = 240;
+    
+    const fgThresholdValue = document.getElementById('rbFgThresholdValue');
+    if (fgThresholdValue) fgThresholdValue.textContent = '240';
+    
+    const alphaMattingOptions = document.getElementById('rbAlphaMattingOptions');
+    if (alphaMattingOptions) alphaMattingOptions.style.display = 'block';
+    
     const btn = document.getElementById('rbProcessBtn');
     if (btn) {
         btn.innerHTML = `<i data-lucide="scissors" style="width: 18px;"></i> Quitar Fondo`;
@@ -1270,12 +1337,37 @@ async function runRembg() {
     btn.classList.add('disabled-btn');
     btn.onclick = null;
     
+    const model = document.getElementById('rbModelSelect')?.value || 'u2net';
+    const alphaMatting = document.getElementById('rbAlphaMatting')?.checked || false;
+    const erodeSize = document.getElementById('rbErodeSlider')?.value || 10;
+    const fgThreshold = document.getElementById('rbFgThresholdSlider')?.value || 240;
+    const bgThreshold = document.getElementById('rbBgThresholdSlider')?.value || 10;
+    const postProcess = document.getElementById('rbPostProcess')?.checked || false;
+    const decontaminate = document.getElementById('rbDecontaminate')?.checked || false;
+
+    // Configurar cargador con texto dinámico
+    const loaderTextElement = document.getElementById('rbLoaderText');
+    if (loaderTextElement) {
+        if (model !== 'u2net') {
+            loaderTextElement.textContent = "Quitando fondo... La primera vez puede tardar 1-2 minutos mientras descarga el modelo seleccionado.";
+        } else {
+            loaderTextElement.textContent = "Quitando fondo, por favor espera...";
+        }
+    }
+    
     document.getElementById('rbLoader').style.display = 'flex';
     document.getElementById('rbPreviewResult').style.display = 'none';
     document.getElementById('rbResultInfo').style.display = 'none';
 
     const formData = new FormData();
     formData.append('file', rbSelectedFile);
+    formData.append('model', model);
+    formData.append('alpha_matting', alphaMatting);
+    formData.append('erode_size', erodeSize);
+    formData.append('fg_threshold', fgThreshold);
+    formData.append('bg_threshold', bgThreshold);
+    formData.append('post_process', postProcess);
+    formData.append('decontaminate', decontaminate);
 
     try {
         const response = await fetch('/api/remove-background', {

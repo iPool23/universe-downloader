@@ -1,5 +1,5 @@
 """Rutas de la API"""
-from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse
 from starlette.background import BackgroundTask
 import uuid
@@ -659,7 +659,16 @@ async def outpaint_image(
 # REMOVE BACKGROUND ENDPOINT
 # =====================================================
 @router.post("/remove-background")
-async def remove_background_api(file: UploadFile = File(...)):
+async def remove_background_api(
+    file: UploadFile = File(...),
+    model: str = Form("u2net"),
+    alpha_matting: bool = Form(False),
+    erode_size: int = Form(10),
+    fg_threshold: int = Form(240),
+    bg_threshold: int = Form(10),
+    post_process: bool = Form(False),
+    decontaminate: bool = Form(False)
+):
     """Remueve el fondo de una imagen usando rembg."""
     from PIL import Image as PILImage
     import shutil
@@ -683,7 +692,17 @@ async def remove_background_api(file: UploadFile = File(...)):
         img = PILImage.open(input_path).convert("RGBA")
         
         # Ejecutar en hilo de fondo
-        result = await asyncio.to_thread(rembg_service.remove_background, img)
+        result = await asyncio.to_thread(
+            rembg_service.remove_background, 
+            img, 
+            model_name=model, 
+            alpha_matting=alpha_matting, 
+            erode_size=erode_size, 
+            fg_threshold=fg_threshold,
+            bg_threshold=bg_threshold,
+            post_process=post_process,
+            decontaminate=decontaminate
+        )
         
         output_path = Path(DOWNLOADS_DIR) / f"rembg_result_{op_id}.png"
         result.save(str(output_path), "PNG")
