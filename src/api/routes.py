@@ -361,3 +361,353 @@ async def get_conversion_file(convert_id: str):
         filename=result['output_name'],
         media_type='video/mp4'
     )
+
+
+# =====================================================
+# IMAGE FORMAT CONVERSION ENDPOINT
+# =====================================================
+
+@router.post("/convert-image")
+async def convert_image(
+    file: UploadFile = File(...),
+    target_format: str = "webp",
+    quality: int = 85,
+    width: int = 0,
+    height: int = 0
+):
+    """
+    Convierte una imagen entre formatos: PNG, JPG, WebP, AVIF.
+    Opcionalmente redimensiona la imagen.
+    
+    Args:
+        file: Imagen a convertir
+        target_format: Formato destino (png, jpg, webp, avif)
+        quality: Calidad de compresión (10-100, solo para formatos lossy)
+        width: Ancho deseado en píxeles (0 = mantener original)
+        height: Alto deseado en píxeles (0 = mantener original)
+    """
+    valid_formats = {'png', 'jpg', 'jpeg', 'webp', 'avif'}
+    target_format = target_format.lower().strip()
+    if target_format == 'jpeg':
+        target_format = 'jpg'
+    
+    if target_format not in valid_formats:
+        raise HTTPException(status_code=400, detail=f"Formato no soportado: {target_format}")
+    
+    # Validate input file extension
+    input_ext = Path(file.filename).suffix.lower()
+    valid_input_exts = {'.png', '.jpg', '.jpeg', '.webp', '.avif', '.bmp', '.tiff', '.tif'}
+    if input_ext not in valid_input_exts:
+        raise HTTPException(status_code=400, detail="Formato de imagen no soportado")
+    
+    # Clamp quality
+    quality = max(10, min(100, quality))
+    
+    import uuid as _uuid
+    convert_id = str(_uuid.uuid4())[:8]
+    
+    # Save uploaded file temporarily
+    input_path = Path(DOWNLOADS_DIR) / f"img_input_{convert_id}{input_ext}"
+    try:
+        with open(input_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error guardando archivo: {str(e)}")
+    
+    # Convert with Pillow
+    output_ext = 'jpg' if target_format == 'jpg' else target_format
+    original_name = Path(file.filename).stem
+    output_filename = f"{original_name}.{output_ext}"
+    output_path = Path(DOWNLOADS_DIR) / f"img_output_{convert_id}.{output_ext}"
+    
+    try:
+        from PIL import Image
+        
+        img = Image.open(input_path)
+        
+        # Resize if dimensions specified
+        if width > 0 and height > 0:
+            img = img.resize((width, height), Image.LANCZOS)
+        elif width > 0:
+            ratio = width / img.width
+            img = img.resize((width, int(img.height * ratio)), Image.LANCZOS)
+        elif height > 0:
+            ratio = height / img.height
+            img = img.resize((int(img.width * ratio), height), Image.LANCZOS)
+        
+        # Handle transparency: RGBA -> RGB for formats that don't support alpha
+        if target_format in ('jpg', 'jpeg'):
+            if img.mode in ('RGBA', 'LA', 'PA'):
+                # Create white background
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[-1])  # Use alpha channel as mask
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            img.save(str(output_path), 'JPEG', quality=quality, optimize=True)
+        
+        elif target_format == 'png':
+            if img.mode == 'CMYK':
+                img = img.convert('RGB')
+            img.save(str(output_path), 'PNG', optimize=True)
+        
+        elif target_format == 'webp':
+            img.save(str(output_path), 'WEBP', quality=quality, method=4)
+        
+        elif target_format == 'avif':
+            if img.mode == 'CMYK':
+                img = img.convert('RGB')
+            img.save(str(output_path), 'AVIF', quality=quality)
+        
+        img.close()
+        
+    except Exception as e:
+        # Cleanup on error
+        if input_path.exists():
+            input_path.unlink()
+        if output_path.exists():
+            output_path.unlink()
+        raise HTTPException(status_code=500, detail=f"Error convirtiendo imagen: {str(e)}")
+    
+    # Cleanup input file and schedule output cleanup after send
+    def cleanup():
+        try:
+            if input_path.exists():
+                input_path.unlink()
+        except Exception:
+            pass
+        try:
+            if output_path.exists():
+                output_path.unlink()
+        except Exception:
+            pass
+    
+    # Determine media type
+    media_types = {
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'webp': 'image/webp',
+        'avif': 'image/avif',
+    }
+    
+    return FileResponse(
+        path=output_path,
+        filename=output_filename,
+        media_type=media_types.get(target_format, 'application/octet-stream'),
+        background=BackgroundTask(cleanup)
+    )
+
+
+# =====================================================
+# OUTPAINTING (AI IMAGE EXPANSION) ENDPOINTS
+# =====================================================
+
+@router.get("/outpaint/status")
+async def outpaint_status():
+    """Verifica si la GPU está disponible y el modelo cargado."""
+    try:
+        from src.services.outpainting_service import outpainting_service
+        gpu_info = outpainting_service.get_gpu_info()
+        return {"status": "ok", "gpu": gpu_info}
+    except ImportError:
+        return {"status": "error", "message": "PyTorch not installed"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/outpaint/load")
+async def outpaint_load_model():
+    """Carga el modelo SDXL Inpainting en la GPU (descarga ~7GB la primera vez)."""
+    try:
+        from src.services.outpainting_service import outpainting_service
+        
+        if not outpainting_service.is_available():
+            raise HTTPException(status_code=400, detail="CUDA not available. GPU NVIDIA required.")
+        
+        if outpainting_service.is_loaded():
+            return {"status": "ok", "message": "Model already loaded"}
+        
+        # Load in background thread to avoid blocking
+        await asyncio.to_thread(outpainting_service.load_model)
+        return {"status": "ok", "message": "Model loaded successfully"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading model: {str(e)}")
+
+
+@router.post("/outpaint/unload")
+async def outpaint_unload_model():
+    """Descarga el modelo de la GPU para liberar VRAM."""
+    try:
+        from src.services.outpainting_service import outpainting_service
+        outpainting_service.unload_model()
+        return {"status": "ok", "message": "Model unloaded"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/outpaint")
+async def outpaint_image(
+    file: UploadFile = File(...),
+    direction: str = "all",
+    pixels: int = 128,
+    prompt: str = "",
+    steps: int = 20,
+    guidance: float = 7.5,
+):
+    """
+    Expande una imagen usando IA (SDXL Inpainting outpainting).
+    
+    Args:
+        file: Imagen a expandir
+        direction: "up", "down", "left", "right", "all"
+        pixels: Píxeles a expandir (32-512)
+        prompt: Texto para guiar la generación (opcional)
+        steps: Pasos de inferencia (15-50, default 20)
+        guidance: Guidance scale (1-20, default 7.5)
+    """
+    from PIL import Image as PILImage
+    import io
+    
+    try:
+        from src.services.outpainting_service import outpainting_service
+    except ImportError:
+        raise HTTPException(status_code=500, detail="PyTorch/diffusers not installed")
+    
+    if not outpainting_service.is_available():
+        raise HTTPException(status_code=400, detail="CUDA not available")
+    
+    # Validate direction
+    valid_directions = {"up", "down", "left", "right", "all"}
+    if direction not in valid_directions:
+        raise HTTPException(status_code=400, detail=f"Invalid direction: {direction}")
+    
+    # Clamp values
+    pixels = max(32, min(512, pixels))
+    steps = max(15, min(50, steps))
+    guidance = max(1.0, min(20.0, guidance))
+    
+    # Read uploaded image
+    import uuid as _uuid
+    op_id = str(_uuid.uuid4())[:8]
+    input_path = Path(DOWNLOADS_DIR) / f"outpaint_input_{op_id}.png"
+    
+    try:
+        with open(input_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving file: {str(e)}")
+    
+    try:
+        # Open with PIL
+        img = PILImage.open(input_path).convert("RGB")
+        
+        # Load model if needed
+        if not outpainting_service.is_loaded():
+            await asyncio.to_thread(outpainting_service.load_model)
+        
+        # Run outpainting in background thread
+        result = await asyncio.to_thread(
+            outpainting_service.expand,
+            image=img,
+            direction=direction,
+            pixels=pixels,
+            prompt=prompt,
+            num_inference_steps=steps,
+            guidance_scale=guidance,
+        )
+        
+        # Save result to PNG
+        output_path = Path(DOWNLOADS_DIR) / f"outpaint_result_{op_id}.png"
+        result.save(str(output_path), "PNG")
+        
+        img.close()
+        result.close()
+        
+        # Cleanup
+        def cleanup():
+            try:
+                if input_path.exists():
+                    input_path.unlink()
+            except Exception:
+                pass
+            try:
+                if output_path.exists():
+                    output_path.unlink()
+            except Exception:
+                pass
+        
+        original_name = Path(file.filename).stem if file.filename else "outpainted"
+        
+        return FileResponse(
+            path=output_path,
+            filename=f"{original_name}_outpainted.png",
+            media_type="image/png",
+            background=BackgroundTask(cleanup)
+        )
+        
+    except Exception as e:
+        # Cleanup on error
+        if input_path.exists():
+            input_path.unlink()
+        raise HTTPException(status_code=500, detail=f"Outpainting error: {str(e)}")
+
+# =====================================================
+# REMOVE BACKGROUND ENDPOINT
+# =====================================================
+@router.post("/remove-background")
+async def remove_background_api(file: UploadFile = File(...)):
+    """Remueve el fondo de una imagen usando rembg."""
+    from PIL import Image as PILImage
+    import shutil
+    import uuid as _uuid
+    
+    try:
+        from src.services.rembg_service import rembg_service
+    except ImportError:
+        raise HTTPException(status_code=500, detail="rembg no instalado")
+        
+    op_id = str(_uuid.uuid4())[:8]
+    input_path = Path(DOWNLOADS_DIR) / f"rembg_input_{op_id}.png"
+    
+    try:
+        with open(input_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al guardar archivo: {str(e)}")
+        
+    try:
+        img = PILImage.open(input_path).convert("RGBA")
+        
+        # Ejecutar en hilo de fondo
+        result = await asyncio.to_thread(rembg_service.remove_background, img)
+        
+        output_path = Path(DOWNLOADS_DIR) / f"rembg_result_{op_id}.png"
+        result.save(str(output_path), "PNG")
+        
+        img.close()
+        result.close()
+        
+        def cleanup():
+            try:
+                if input_path.exists(): input_path.unlink()
+            except Exception: pass
+            try:
+                if output_path.exists(): output_path.unlink()
+            except Exception: pass
+            
+        original_name = Path(file.filename).stem if file.filename else "image"
+        
+        return FileResponse(
+            path=output_path,
+            filename=f"{original_name}_nobg.png",
+            media_type="image/png",
+            background=BackgroundTask(cleanup)
+        )
+    except Exception as e:
+        if input_path.exists():
+            input_path.unlink()
+        raise HTTPException(status_code=500, detail=f"Error al quitar fondo: {str(e)}")

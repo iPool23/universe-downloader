@@ -72,35 +72,24 @@ document.querySelectorAll('.format-btn').forEach(btn => {
 
 // Navigation Logic
 const navItems = document.querySelectorAll('.nav-item');
+const allViews = ['downloaderView', 'imageConverterView', 'converterView', 'outpaintView', 'rembgView'];
 
 navItems.forEach(item => {
     item.addEventListener('click', (e) => {
         e.preventDefault();
 
-        // Simple text check
-        const text = item.innerText;
-        const isConverter = text.indexOf('Convertir') !== -1;
-        const isHome = text.indexOf('Inicio') !== -1;
-
-        if (!isConverter && !isHome) return;
+        const targetView = item.getAttribute('data-view');
+        if (!targetView) return;
 
         // Visual Active State
         navItems.forEach(nav => nav.classList.remove('active'));
         item.classList.add('active');
 
-        // View Switching
-        const downloaderView = document.getElementById('downloaderView');
-        const converterView = document.getElementById('converterView');
-
-        // Hide all first
-        if (downloaderView) downloaderView.style.display = 'none';
-        if (converterView) converterView.style.display = 'none';
-
-        if (isHome) {
-            if (downloaderView) downloaderView.style.display = 'block';
-        } else if (isConverter) {
-            if (converterView) converterView.style.display = 'block';
-        }
+        // Hide all views, show target
+        allViews.forEach(viewId => {
+            const view = document.getElementById(viewId);
+            if (view) view.style.display = viewId === targetView ? 'block' : 'none';
+        });
     });
 });
 
@@ -642,4 +631,703 @@ function updateConvertProgressModal(progress) {
     } else if (progress.status === 'starting') {
         progressDetails.textContent = 'Iniciando conversión...';
     }
+}
+
+// =====================================================
+// IMAGE FORMAT CONVERSION
+// =====================================================
+let selectedImageFile = null;
+let selectedImgFormat = 'webp';
+let imgAspectRatio = 1;
+let imgAspectLocked = true;
+let imgOriginalWidth = 0;
+let imgOriginalHeight = 0;
+let previewDebounceTimer = null;
+
+// Image file input handler
+const imageFileInput = document.getElementById('imageFileInput');
+if (imageFileInput) {
+    imageFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) handleImageSelection(file);
+    });
+}
+
+// Drag and drop for image upload zone
+const imgUploadZone = document.getElementById('imgUploadZone');
+if (imgUploadZone) {
+    imgUploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        imgUploadZone.classList.add('drag-over');
+    });
+
+    imgUploadZone.addEventListener('dragleave', () => {
+        imgUploadZone.classList.remove('drag-over');
+    });
+
+    imgUploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        imgUploadZone.classList.remove('drag-over');
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+            handleImageSelection(file);
+        }
+    });
+}
+
+// Image format buttons
+document.querySelectorAll('.img-format-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.img-format-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedImgFormat = btn.getAttribute('data-imgformat');
+
+        // Show/hide quality slider (PNG is lossless)
+        const qualityGroup = document.getElementById('imgQualityGroup');
+        if (qualityGroup) {
+            qualityGroup.style.display = selectedImgFormat === 'png' ? 'none' : 'block';
+        }
+
+        // Update button text
+        updateImgConvertBtnText();
+
+        // Trigger preview
+        schedulePreview();
+    });
+});
+
+// Quality slider
+const imgQualitySlider = document.getElementById('imgQualitySlider');
+if (imgQualitySlider) {
+    imgQualitySlider.addEventListener('input', () => {
+        const val = document.getElementById('imgQualityValue');
+        if (val) val.textContent = imgQualitySlider.value;
+        schedulePreview();
+    });
+}
+
+// Resize inputs
+const imgWidthInput = document.getElementById('imgWidth');
+const imgHeightInput = document.getElementById('imgHeight');
+
+if (imgWidthInput) {
+    imgWidthInput.addEventListener('input', () => {
+        if (imgAspectLocked && imgWidthInput.value) {
+            const w = parseInt(imgWidthInput.value);
+            imgHeightInput.value = Math.round(w / imgAspectRatio);
+        }
+        schedulePreview();
+    });
+}
+
+if (imgHeightInput) {
+    imgHeightInput.addEventListener('input', () => {
+        if (imgAspectLocked && imgHeightInput.value) {
+            const h = parseInt(imgHeightInput.value);
+            imgWidthInput.value = Math.round(h * imgAspectRatio);
+        }
+        schedulePreview();
+    });
+}
+
+function toggleAspectLock() {
+    imgAspectLocked = !imgAspectLocked;
+    const btn = document.getElementById('imgAspectLock');
+    if (btn) {
+        btn.classList.toggle('active', imgAspectLocked);
+        btn.innerHTML = imgAspectLocked
+            ? '<i data-lucide="lock" style="width: 14px; height: 14px;"></i>'
+            : '<i data-lucide="unlock" style="width: 14px; height: 14px;"></i>';
+        lucide.createIcons();
+    }
+}
+
+function updateImgConvertBtnText() {
+    const convertBtn = document.getElementById('imgConvertBtn');
+    if (convertBtn && selectedImageFile) {
+        convertBtn.textContent = `Convertir a ${selectedImgFormat.toUpperCase()}`;
+    }
+}
+
+function handleImageSelection(file) {
+    selectedImageFile = file;
+
+    // Hide upload zone, show editor panel and reset button
+    const uploadZone = document.getElementById('imgUploadZone');
+    const editorPanel = document.getElementById('imgEditorPanel');
+    const resetBtn = document.getElementById('imgResetBtn');
+    if (uploadZone) uploadZone.style.display = 'none';
+    if (editorPanel) editorPanel.style.display = 'block';
+    if (resetBtn) resetBtn.style.display = 'inline-flex';
+
+    // Show original preview
+    const previewImg = document.getElementById('imgPreviewOriginal');
+    if (previewImg) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            previewImg.src = e.target.result;
+
+            // Get natural dimensions after load
+            const tmpImg = new Image();
+            tmpImg.onload = () => {
+                imgOriginalWidth = tmpImg.naturalWidth;
+                imgOriginalHeight = tmpImg.naturalHeight;
+                imgAspectRatio = imgOriginalWidth / imgOriginalHeight;
+
+                // Set dimension inputs
+                const wInput = document.getElementById('imgWidth');
+                const hInput = document.getElementById('imgHeight');
+                if (wInput) wInput.value = imgOriginalWidth;
+                if (hInput) hInput.value = imgOriginalHeight;
+
+                // Show original info
+                const origInfo = document.getElementById('imgOriginalInfo');
+                const ext = file.name.split('.').pop().toUpperCase();
+                const sizeKB = (file.size / 1024).toFixed(1);
+                if (origInfo) origInfo.textContent = `${ext} · ${imgOriginalWidth}×${imgOriginalHeight} · ${sizeKB}KB`;
+            };
+            tmpImg.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // Auto-select best format
+    const inputExt = file.name.split('.').pop().toLowerCase();
+    const extMap = { 'jpg': 'jpg', 'jpeg': 'jpg', 'png': 'png', 'webp': 'webp', 'avif': 'avif' };
+    const inputFormat = extMap[inputExt] || inputExt;
+    const preferenceOrder = ['webp', 'jpg', 'png', 'avif'];
+    const bestFormat = preferenceOrder.find(f => f !== inputFormat) || 'webp';
+
+    document.querySelectorAll('.img-format-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-imgformat') === bestFormat);
+    });
+    selectedImgFormat = bestFormat;
+
+    // Show/hide quality for PNG
+    const qualityGroup = document.getElementById('imgQualityGroup');
+    if (qualityGroup) qualityGroup.style.display = selectedImgFormat === 'png' ? 'none' : 'block';
+
+    updateImgConvertBtnText();
+    lucide.createIcons();
+}
+
+function resetImageConverter() {
+    selectedImageFile = null;
+    imgOriginalWidth = 0;
+    imgOriginalHeight = 0;
+
+    // Show upload zone, hide editor panel and reset button
+    const uploadZone = document.getElementById('imgUploadZone');
+    const editorPanel = document.getElementById('imgEditorPanel');
+    const resetBtn = document.getElementById('imgResetBtn');
+    if (uploadZone) uploadZone.style.display = 'block';
+    if (editorPanel) editorPanel.style.display = 'none';
+    if (resetBtn) resetBtn.style.display = 'none';
+
+    // Reset upload zone text
+    const title = document.getElementById('imgUploadTitle');
+    const subtitle = document.getElementById('imgUploadSubtitle');
+    if (title) title.textContent = 'Haz clic o arrastra una imagen aquí';
+    if (subtitle) subtitle.textContent = 'Formatos: PNG, JPG, WebP, AVIF, BMP, TIFF';
+
+    // Clear images
+    const origImg = document.getElementById('imgPreviewOriginal');
+    const resultImg = document.getElementById('imgPreviewResult');
+    const placeholder = document.getElementById('imgResultPlaceholder');
+    if (origImg) origImg.src = '';
+    if (resultImg) { resultImg.src = ''; resultImg.style.display = 'none'; }
+    if (placeholder) placeholder.style.display = 'flex';
+
+    // Clear info badges
+    const origInfo = document.getElementById('imgOriginalInfo');
+    const resultInfo = document.getElementById('imgResultInfo');
+    if (origInfo) origInfo.textContent = '';
+    if (resultInfo) resultInfo.textContent = '';
+
+    // Reset inputs
+    const wInput = document.getElementById('imgWidth');
+    const hInput = document.getElementById('imgHeight');
+    if (wInput) wInput.value = '';
+    if (hInput) hInput.value = '';
+
+    // Reset file input
+    const fileInput = document.getElementById('imageFileInput');
+    if (fileInput) fileInput.value = '';
+
+    // Reset quality
+    const slider = document.getElementById('imgQualitySlider');
+    const qVal = document.getElementById('imgQualityValue');
+    if (slider) slider.value = 85;
+    if (qVal) qVal.textContent = '85';
+
+    lucide.createIcons();
+}
+
+function schedulePreview() {
+    if (!selectedImageFile) return;
+    clearTimeout(previewDebounceTimer);
+    previewDebounceTimer = setTimeout(() => generatePreview(), 500);
+}
+
+async function generatePreview() {
+    if (!selectedImageFile) return;
+
+    const resultImg = document.getElementById('imgPreviewResult');
+    const placeholder = document.getElementById('imgResultPlaceholder');
+    const resultInfo = document.getElementById('imgResultInfo');
+
+    const quality = document.getElementById('imgQualitySlider')?.value || 85;
+    const width = document.getElementById('imgWidth')?.value || '';
+    const height = document.getElementById('imgHeight')?.value || '';
+
+    let queryParams = `target_format=${selectedImgFormat}&quality=${quality}`;
+    if (width) queryParams += `&width=${width}`;
+    if (height) queryParams += `&height=${height}`;
+
+    const formData = new FormData();
+    formData.append('file', selectedImageFile);
+
+    try {
+        const response = await fetch(`/api/convert-image?${queryParams}`, {
+            method: 'POST', body: formData
+        });
+
+        if (!response.ok) return;
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+
+        if (resultImg) {
+            resultImg.src = url;
+            resultImg.style.display = 'block';
+        }
+        if (placeholder) placeholder.style.display = 'none';
+
+        // Show result info
+        const sizeKB = (blob.size / 1024).toFixed(1);
+        const savings = ((1 - blob.size / selectedImageFile.size) * 100).toFixed(0);
+        const dimText = (width && height) ? `${width}×${height} · ` : '';
+        const savingsText = savings > 0 ? `(-${savings}%)` : `(+${Math.abs(savings)}%)`;
+        if (resultInfo) resultInfo.textContent = `${selectedImgFormat.toUpperCase()} · ${dimText}${sizeKB}KB ${savingsText}`;
+
+    } catch (err) {
+        // Silent fail for preview
+    }
+}
+
+async function convertImage() {
+    if (!selectedImageFile) return;
+
+    const convertBtn = document.getElementById('imgConvertBtn');
+    const originalText = convertBtn.textContent;
+    convertBtn.textContent = 'Convirtiendo...';
+    convertBtn.classList.add('disabled-btn');
+
+    const quality = document.getElementById('imgQualitySlider')?.value || 85;
+    const width = document.getElementById('imgWidth')?.value || '';
+    const height = document.getElementById('imgHeight')?.value || '';
+
+    let queryParams = `target_format=${selectedImgFormat}&quality=${quality}`;
+    if (width) queryParams += `&width=${width}`;
+    if (height) queryParams += `&height=${height}`;
+
+    const formData = new FormData();
+    formData.append('file', selectedImageFile);
+
+    try {
+        const response = await fetch(`/api/convert-image?${queryParams}`, {
+            method: 'POST', body: formData
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Error de conversión');
+        }
+
+        const blob = await response.blob();
+        const originalName = selectedImageFile.name.replace(/\.[^.]+$/, '');
+        const fileName = `${originalName}.${selectedImgFormat}`;
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        const originalSize = (selectedImageFile.size / 1024).toFixed(1);
+        const convertedSize = (blob.size / 1024).toFixed(1);
+        convertBtn.textContent = `Descargado (${originalSize}KB → ${convertedSize}KB)`;
+        convertBtn.classList.remove('disabled-btn');
+
+        setTimeout(() => { convertBtn.textContent = originalText; }, 4000);
+
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+        convertBtn.textContent = originalText;
+        convertBtn.classList.remove('disabled-btn');
+    }
+}
+
+
+// =====================================================
+// OUTPAINTING (AI IMAGE EXPANSION)
+// =====================================================
+let opSelectedFile = null;
+let opDirection = 'all';
+let opGpuChecked = false;
+
+// Check GPU status when page loads
+async function checkGpuStatus() {
+    const badge = document.getElementById('opGpuBadge');
+    const text = document.getElementById('opGpuText');
+    if (!badge || !text) return;
+
+    try {
+        const response = await fetch('/api/outpaint/status');
+        const data = await response.json();
+
+        if (data.status === 'ok' && data.gpu?.available) {
+            badge.className = 'op-gpu-badge ready';
+            text.textContent = `${data.gpu.name} (${data.gpu.vram_total}GB)`;
+            if (data.gpu.model_loaded) {
+                text.textContent += ' · Modelo cargado';
+            }
+        } else {
+            badge.className = 'op-gpu-badge error';
+            text.textContent = data.message || 'GPU no disponible';
+        }
+    } catch (e) {
+        badge.className = 'op-gpu-badge error';
+        text.textContent = 'Error verificando GPU';
+    }
+    opGpuChecked = true;
+}
+
+// Run check on first view access
+document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+        if (item.getAttribute('data-view') === 'outpaintView' && !opGpuChecked) {
+            checkGpuStatus();
+        }
+    });
+});
+
+// File input
+const opFileInput = document.getElementById('opFileInput');
+if (opFileInput) {
+    opFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) handleOpFileSelection(file);
+    });
+}
+
+// Drag and drop
+const opUploadZone = document.getElementById('opUploadZone');
+if (opUploadZone) {
+    opUploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        opUploadZone.classList.add('drag-over');
+    });
+    opUploadZone.addEventListener('dragleave', () => {
+        opUploadZone.classList.remove('drag-over');
+    });
+    opUploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        opUploadZone.classList.remove('drag-over');
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) handleOpFileSelection(file);
+    });
+}
+
+// Direction buttons
+document.querySelectorAll('.op-dir-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.op-dir-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        opDirection = btn.getAttribute('data-dir');
+    });
+});
+
+// Sliders
+const opPixelsSlider = document.getElementById('opPixelsSlider');
+if (opPixelsSlider) {
+    opPixelsSlider.addEventListener('input', () => {
+        document.getElementById('opPixelsValue').textContent = opPixelsSlider.value;
+    });
+}
+
+const opStepsSlider = document.getElementById('opStepsSlider');
+if (opStepsSlider) {
+    opStepsSlider.addEventListener('input', () => {
+        document.getElementById('opStepsValue').textContent = opStepsSlider.value;
+    });
+}
+
+function handleOpFileSelection(file) {
+    opSelectedFile = file;
+
+    document.getElementById('opUploadZone').style.display = 'none';
+    document.getElementById('opEditorPanel').style.display = 'block';
+    document.getElementById('opResetBtn').style.display = 'inline-flex';
+
+    const previewImg = document.getElementById('opPreviewOriginal');
+    if (previewImg) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            previewImg.src = e.target.result;
+
+            const tmpImg = new Image();
+            tmpImg.onload = () => {
+                const origInfo = document.getElementById('opOriginalInfo');
+                const ext = file.name.split('.').pop().toUpperCase();
+                const sizeKB = (file.size / 1024).toFixed(1);
+                if (origInfo) origInfo.textContent = `${ext} · ${tmpImg.naturalWidth}×${tmpImg.naturalHeight} · ${sizeKB}KB`;
+            };
+            tmpImg.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    lucide.createIcons();
+}
+
+function resetOutpaint() {
+    opSelectedFile = null;
+
+    document.getElementById('opUploadZone').style.display = 'block';
+    document.getElementById('opEditorPanel').style.display = 'none';
+    document.getElementById('opResetBtn').style.display = 'none';
+
+    const origImg = document.getElementById('opPreviewOriginal');
+    const resultImg = document.getElementById('opPreviewResult');
+    const placeholder = document.getElementById('opResultPlaceholder');
+    if (origImg) origImg.src = '';
+    if (resultImg) { resultImg.src = ''; resultImg.style.display = 'none'; }
+    if (placeholder) placeholder.style.display = 'flex';
+
+    document.getElementById('opOriginalInfo').textContent = '';
+    document.getElementById('opResultInfo').textContent = '';
+    document.getElementById('opFileInput').value = '';
+
+    lucide.createIcons();
+}
+
+async function runOutpaint() {
+    if (!opSelectedFile) return;
+
+    const expandBtn = document.getElementById('opExpandBtn');
+    const originalHTML = expandBtn.innerHTML;
+    expandBtn.innerHTML = '<i data-lucide="loader" style="width: 18px;" class="spin"></i> Generando con IA...';
+    expandBtn.classList.add('disabled-btn');
+    lucide.createIcons();
+
+    const pixels = document.getElementById('opPixelsSlider')?.value || 128;
+    const steps = document.getElementById('opStepsSlider')?.value || 20;
+    const prompt = document.getElementById('opPrompt')?.value || '';
+
+    const formData = new FormData();
+    formData.append('file', opSelectedFile);
+
+    let queryParams = `direction=${opDirection}&pixels=${pixels}&steps=${steps}`;
+    if (prompt) queryParams += `&prompt=${encodeURIComponent(prompt)}`;
+
+    try {
+        const response = await fetch(`/api/outpaint?${queryParams}`, {
+            method: 'POST', body: formData
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Error en outpainting');
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+
+        // Show result
+        const resultImg = document.getElementById('opPreviewResult');
+        const placeholder = document.getElementById('opResultPlaceholder');
+        if (resultImg) { resultImg.src = url; resultImg.style.display = 'block'; }
+        if (placeholder) placeholder.style.display = 'none';
+
+        // Result info
+        const resultInfo = document.getElementById('opResultInfo');
+        const sizeKB = (blob.size / 1024).toFixed(1);
+        if (resultInfo) resultInfo.textContent = `PNG · ${sizeKB}KB`;
+
+        // Enable download on click
+        resultImg.style.cursor = 'pointer';
+        resultImg.onclick = () => {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${opSelectedFile.name.replace(/\.[^.]+$/, '')}_outpainted.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        };
+
+        expandBtn.innerHTML = originalHTML;
+        expandBtn.classList.remove('disabled-btn');
+
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+        expandBtn.innerHTML = originalHTML;
+        expandBtn.classList.remove('disabled-btn');
+    }
+    lucide.createIcons();
+}
+
+// ==========================================================
+// REMBG LOGIC
+// ==========================================================
+let rbSelectedFile = null;
+
+function handleRembgFileSelection(file) {
+    rbSelectedFile = file;
+    
+    // Show preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        document.getElementById('rbPreviewOriginal').src = e.target.result;
+        document.getElementById('rbUploadZone').style.display = 'none';
+        document.getElementById('rbEditorPanel').style.display = 'block';
+        document.getElementById('rbResetBtn').style.display = 'flex';
+        
+        // Set info
+        const img = new Image();
+        img.onload = function() {
+            const kb = (rbSelectedFile.size / 1024).toFixed(1);
+            document.getElementById('rbOriginalInfo').textContent = `${img.width}x${img.height} - ${kb}KB`;
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(rbSelectedFile);
+}
+
+const rbFileInput = document.getElementById('rbFileInput');
+if (rbFileInput) {
+    rbFileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+            handleRembgFileSelection(e.target.files[0]);
+        }
+    });
+}
+
+// Drag and drop for rembg upload zone
+const rbUploadZone = document.getElementById('rbUploadZone');
+if (rbUploadZone) {
+    rbUploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        rbUploadZone.classList.add('drag-over');
+    });
+
+    rbUploadZone.addEventListener('dragleave', () => {
+        rbUploadZone.classList.remove('drag-over');
+    });
+
+    rbUploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        rbUploadZone.classList.remove('drag-over');
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+            handleRembgFileSelection(file);
+        }
+    });
+}
+
+function resetRembg() {
+    rbSelectedFile = null;
+    if(rbFileInput) rbFileInput.value = '';
+    
+    document.getElementById('rbPreviewOriginal').src = '';
+    document.getElementById('rbPreviewResult').src = '';
+    document.getElementById('rbPreviewResult').style.display = 'none';
+    
+    document.getElementById('rbEditorPanel').style.display = 'none';
+    document.getElementById('rbUploadZone').style.display = 'block';
+    document.getElementById('rbResetBtn').style.display = 'none';
+    document.getElementById('rbResultInfo').style.display = 'none';
+    
+    const btn = document.getElementById('rbProcessBtn');
+    if (btn) {
+        btn.innerHTML = `<i data-lucide="scissors" style="width: 18px;"></i> Quitar Fondo`;
+        btn.classList.remove('disabled-btn');
+        btn.onclick = runRembg;
+    }
+    lucide.createIcons();
+}
+
+async function runRembg() {
+    if (!rbSelectedFile) return;
+
+    const btn = document.getElementById('rbProcessBtn');
+    const originalBtn = btn.innerHTML;
+    
+    btn.innerHTML = `<div class="op-spinner"></div> Procesando IA...`;
+    btn.classList.add('disabled-btn');
+    btn.onclick = null;
+    
+    document.getElementById('rbLoader').style.display = 'flex';
+    document.getElementById('rbPreviewResult').style.display = 'none';
+    document.getElementById('rbResultInfo').style.display = 'none';
+
+    const formData = new FormData();
+    formData.append('file', rbSelectedFile);
+
+    try {
+        const response = await fetch('/api/remove-background', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            let errorMsg = 'Fallo al procesar imagen';
+            try {
+                const err = await response.json();
+                errorMsg = err.detail || errorMsg;
+            } catch (e) {
+                errorMsg = await response.text();
+            }
+            throw new Error(errorMsg);
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        
+        document.getElementById('rbLoader').style.display = 'none';
+        
+        const preview = document.getElementById('rbPreviewResult');
+        preview.src = url;
+        preview.style.display = 'block';
+        
+        const info = document.getElementById('rbResultInfo');
+        info.textContent = `PNG Transparente - ${(blob.size / 1024).toFixed(1)}KB`;
+        info.style.display = 'inline-block';
+        
+        // Transform button into download button
+        btn.innerHTML = `<i data-lucide="download" style="width: 18px;"></i> Guardar Resultado`;
+        btn.classList.remove('disabled-btn');
+        
+        const originalName = rbSelectedFile.name.replace(/\.[^/.]+$/, "");
+        
+        btn.onclick = () => {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${originalName}_nobg.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        };
+
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+        document.getElementById('rbLoader').style.display = 'none';
+        btn.innerHTML = originalBtn;
+        btn.classList.remove('disabled-btn');
+        btn.onclick = runRembg;
+    }
+    lucide.createIcons();
 }
