@@ -74,6 +74,11 @@ class DownloaderService:
             print(f"FFmpeg found at: {self.ffmpeg_path}")
             # Añadir a PATH para asegurar que yt-dlp lo encuentre
             os.environ["PATH"] += os.pathsep + self.ffmpeg_path
+        else:
+            print("WARNING: FFmpeg not found. Some downloads may fail.")
+        
+        # Ensure Python Scripts dir is on PATH (required for pybalt CLI)
+        self._setup_python_scripts_path()
         
         # Ensure deno is on PATH (required by yt-dlp for YouTube n-challenge)
         self._setup_deno_path()
@@ -81,6 +86,39 @@ class DownloaderService:
     def _is_tiktok_url(self, url: str) -> bool:
         """Check if URL is a TikTok URL"""
         return 'tiktok.com' in url or 'vm.tiktok.com' in url
+    
+    def _setup_python_scripts_path(self):
+        """Find Python Scripts directory and add it to PATH.
+        
+        Tools like pybalt install their CLI executables in Python's Scripts
+        directory. If Python was installed from the Microsoft Store or without
+        adding Scripts to PATH, these executables won't be found.
+        """
+        # Already on PATH?
+        if shutil.which('pybalt'):
+            return
+        
+        # Search common Python Scripts locations
+        scripts_locations = [
+            # Standard Python install
+            os.path.join(sys.prefix, 'Scripts'),
+            # User-level install
+            os.path.join(os.path.expanduser('~'), 'AppData', 'Local', 'Programs', 'Python', f'Python{sys.version_info.major}{sys.version_info.minor}', 'Scripts'),
+            # Microsoft Store / pythoncore installs
+            os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Python', f'pythoncore-{sys.version_info.major}.{sys.version_info.minor}-64', 'Scripts'),
+            os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Python', f'pythoncore-{sys.version_info.major}.{sys.version_info.minor}-32', 'Scripts'),
+        ]
+        
+        for location in scripts_locations:
+            if not location or not os.path.isdir(location):
+                continue
+            pybalt_exe = os.path.join(location, 'pybalt.exe')
+            if os.path.isfile(pybalt_exe):
+                print(f"Python Scripts found at: {location}")
+                os.environ["PATH"] = location + os.pathsep + os.environ.get("PATH", "")
+                return
+        
+        print("WARNING: pybalt CLI not found. TikTok downloads may fail.")
     
     def _setup_deno_path(self):
         """Find deno executable and add its directory to PATH.
@@ -251,11 +289,14 @@ class DownloaderService:
         if 'tiktok.com' in url and '?' in url:
             url = url.split('?')[0]
 
-        # Usamos logger silencioso y opciones por defecto
+        # Opciones optimizadas para escaneo rápido (sin descargar)
         opts = {
             'quiet': True,
             'no_warnings': True,
-            'noplaylist': True, # IMPORTANT: Prevent scanning entire playlists
+            'noplaylist': True,       # No escanear playlists completas
+            'extract_flat': 'discard',  # Descartar entradas de playlist rápidamente
+            'skip_download': True,     # Explícitamente no descargar
+            'socket_timeout': 10,      # Timeout de 10s para conexiones lentas
             'logger': QuietLogger(),
             # Auto-download latest EJS challenge solver from GitHub
             'remote_components': ['ejs:github'],
@@ -286,7 +327,7 @@ class DownloaderService:
             # TikTok fallback: use oEmbed API for metadata
             if self._is_tiktok_url(url):
                 import re
-                import requests
+                import httpx
                 
                 # Extract video ID from URL
                 video_id_match = re.search(r'/video/(\d+)', url)
@@ -299,7 +340,7 @@ class DownloaderService:
                 
                 try:
                     oembed_url = f'https://www.tiktok.com/oembed?url={url}'
-                    resp = requests.get(oembed_url, timeout=5)
+                    resp = httpx.get(oembed_url, timeout=5)
                     if resp.status_code == 200:
                         data = resp.json()
                         title = data.get('title', title)
@@ -468,7 +509,7 @@ class DownloaderService:
                 percent_str = clean_ansi(d.get('_percent_str', '0%')).strip().replace('%', '')
                 try:
                     percent = float(percent_str)
-                except:
+                except (ValueError, TypeError):
                     percent = 0
                 
                 download_progress[unique_id].update({
@@ -520,7 +561,7 @@ class DownloaderService:
             if attempt > 0:
                 for f in DOWNLOAD_FOLDER.glob(f'{unique_id}.*'):
                     try: f.unlink()
-                    except: pass
+                    except Exception: pass
                 wait_time = 2 ** attempt  # 2s, 4s
                 print(f"[RETRY] Attempt {attempt + 1}/{max_retries} after {wait_time}s wait...")
                 download_progress[unique_id].update({
@@ -597,7 +638,7 @@ class DownloaderService:
                     # Remove corrupted/partial files
                     for f in DOWNLOAD_FOLDER.glob(f'{unique_id}.*'):
                         try: f.unlink()
-                        except: pass
+                        except Exception: pass
                     
                     ydl_opts['format'] = 'best'
                     if 'merge_output_format' in ydl_opts:

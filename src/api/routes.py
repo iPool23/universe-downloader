@@ -7,8 +7,9 @@ import sys
 import asyncio
 import json
 import shutil
+import time as _time
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Tuple
 import os
 from datetime import datetime
 from pydantic import BaseModel
@@ -22,6 +23,33 @@ from src.config import DOWNLOADS_DIR
 router = APIRouter(prefix="/api", tags=["download"])
 downloader = DownloaderService()
 
+# =====================================================
+# CACHÉ DE ESCANEO DE URLs (TTL de 5 minutos)
+# =====================================================
+_scan_cache: Dict[str, Tuple[float, dict]] = {}
+_SCAN_CACHE_TTL = 300  # 5 minutos en segundos
+
+def _get_cached_scan(url: str):
+    """Retorna resultado cacheado si existe y no ha expirado."""
+    entry = _scan_cache.get(url)
+    if entry:
+        timestamp, data = entry
+        if _time.time() - timestamp < _SCAN_CACHE_TTL:
+            return data
+        else:
+            del _scan_cache[url]  # Expirado
+    return None
+
+def _set_cached_scan(url: str, data: dict):
+    """Almacena resultado de escaneo en caché."""
+    _scan_cache[url] = (_time.time(), data)
+    # Limpiar entradas expiradas si hay muchas
+    if len(_scan_cache) > 100:
+        now = _time.time()
+        expired = [k for k, (t, _) in _scan_cache.items() if now - t >= _SCAN_CACHE_TTL]
+        for k in expired:
+            del _scan_cache[k]
+
 class DownloadFile(BaseModel):
     filename: str
     size: str
@@ -33,6 +61,8 @@ class DownloadFile(BaseModel):
 async def scan_video(url: str):
     """
     Obtiene información del video.
+    Usa caché para evitar re-escaneos y asyncio.to_thread()
+    para no bloquear el event loop.
     
     Args:
         url: URL del video
@@ -40,45 +70,19 @@ async def scan_video(url: str):
     Returns:
         VideoInfo: Información del video
     """
+    # 1. Verificar caché primero (instantáneo)
+    cached = _get_cached_scan(url)
+    if cached:
+        return cached
+    
     try:
-        return downloader.get_video_info(url)
+        # 2. Ejecutar en hilo separado para no bloquear el event loop
+        result = await asyncio.to_thread(downloader.get_video_info, url)
+        # 3. Cachear resultado
+        _set_cached_scan(url, result)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-# @router.get("/downloads", response_model=List[DownloadFile])
-# async def list_downloads():
-#     files = []
-#     # Ensure directory exists
-#     downloads_path = Path(DOWNLOADS_DIR)
-#     if not downloads_path.exists():
-#         return []
-# 
-#     for f in downloads_path.glob('*'):
-#         if f.is_file():
-#             # Get basic info
-#             size_mb = f.stat().st_size / (1024 * 1024)
-#             created = datetime.fromtimestamp(f.stat().st_mtime).strftime('%Y-%m-%d %H:%M')
-#             
-#             # Determine type
-#             ext = f.suffix.lower()
-#             if ext in ['.mp4', '.mkv', '.webm']:
-#                 f_type = 'video'
-#             elif ext in ['.mp3', '.m4a', '.wav']:
-#                 f_type = 'audio'
-#             else:
-#                 f_type = 'file'
-# 
-#             files.append(DownloadFile(
-#                 filename=f.name,
-#                 size=f"{size_mb:.1f} MB",
-#                 created_at=created,
-#                 path=str(f),
-#                 type=f_type
-#             ))
-#     
-#     # Sort by newest first
-#     files.sort(key=lambda x: x.created_at, reverse=True)
-#     return files
 
 class DownloadStartResponse(BaseModel):
     download_id: str
@@ -147,6 +151,7 @@ async def cancel_download(download_id: str):
 async def get_download_file(download_id: str):
     """
     Obtiene el archivo descargado una vez completada la descarga.
+    Limpia los datos de progreso para evitar memory leaks.
     """
     result = download_results.get(download_id)
     if not result:
@@ -156,10 +161,16 @@ async def get_download_file(download_id: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
     
+    def cleanup_download_data():
+        """Limpiar datos de progreso y resultados tras enviar el archivo."""
+        download_progress.pop(download_id, None)
+        download_results.pop(download_id, None)
+    
     return FileResponse(
         path=file_path,
         filename=result['filename'],
-        media_type='application/octet-stream'
+        media_type='application/octet-stream',
+        background=BackgroundTask(cleanup_download_data)
     )
 
 @router.post("/download")
@@ -196,23 +207,6 @@ async def download_video(request: DownloadRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# class OpenFolderRequest(BaseModel):
-#     path: str
-# 
-# @router.post("/open-folder")
-# async def open_folder(request: OpenFolderRequest):
-#     try:
-#         path = os.path.normpath(request.path)
-#         if not os.path.exists(path):
-#             raise HTTPException(status_code=404, detail="Archivo no encontrado")
-#         
-#         # Windows command to select file in explorer
-#         import subprocess
-#         cmd = f'explorer /select,"{path}"'
-#         subprocess.Popen(cmd, shell=True)
-#         return {"status": "ok"}
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
 
 
 # =====================================================
@@ -333,11 +327,11 @@ async def download_conversion_file(convert_id: str):
         try:
             if input_path.exists():
                 input_path.unlink()
-        except: pass
+        except Exception: pass
         try:
             if output_path.exists():
                 output_path.unlink()
-        except: pass
+        except Exception: pass
         # Remover progreso para limpiar ram
         conversion_progress.pop(convert_id, None)
         conversion_results.pop(convert_id, None)

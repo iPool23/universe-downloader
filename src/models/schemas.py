@@ -1,6 +1,6 @@
 """Modelos de datos (DTOs)"""
 from typing import Optional
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class VideoQuality(BaseModel):
@@ -28,13 +28,15 @@ class DownloadRequest(BaseModel):
     quality: Optional[int] = Field(None, description="Calidad del video en píxeles (ej: 720, 1080)")
     audio_quality: Optional[int] = Field(None, description="Calidad del audio en kbps (ej: 128, 192, 256, 320)")
     
-    @validator('format')
+    @field_validator('format')
+    @classmethod
     def validate_format(cls, v):
         if v not in ['mp3', 'mp4']:
             raise ValueError('Formato debe ser mp3 o mp4')
         return v
     
-    @validator('url')
+    @field_validator('url')
+    @classmethod
     def validate_url(cls, v):
         if not v or not v.strip():
             raise ValueError('URL no puede estar vacía')

@@ -3,7 +3,7 @@
  * 
  * @author Pool Anthony Deza Millones
  * @github @iPool23
- * @version 2.1.0
+ * @version 2.2.0
  */
 
 let selectedFormat = 'mp4';
