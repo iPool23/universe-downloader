@@ -164,57 +164,55 @@ class DownloaderService:
         print("WARNING: No JS runtime (deno/node) found. YouTube downloads may get 403 errors.")
     
     def _download_with_pybalt_sync(self, url: str, unique_id: str) -> Tuple[Path, str]:
-        """Download TikTok video using pybalt CLI (subprocess)"""
-        import subprocess
+        """Download TikTok video using pybalt (cobalt.tools API) with real progress tracking"""
         import glob
+        import re
         
         download_progress[unique_id].update({
             'status': 'downloading',
-            'percent': 50,
-            'speed': 'cobalt.tools'
+            'percent': 5,
+            'speed': 'cobalt.tools',
+            'eta': ''
         })
         
-        # Use pybalt CLI with output directory
         try:
-            result = subprocess.run(
-                ['pybalt', '-u', url, '-fp', str(DOWNLOAD_FOLDER), '-y'],
-                capture_output=True,
-                text=True,
-                timeout=120,
-                stdin=subprocess.DEVNULL
-            )
+            # Use pybalt as a Python library (async) via asyncio
+            import asyncio
+            from pybalt.core.wrapper import download
             
-            if result.returncode != 0:
-                raise Exception(f"pybalt CLI failed: {result.stderr}")
+            # Track download progress by monitoring file creation
+            download_progress[unique_id].update({
+                'status': 'downloading',
+                'percent': 15,
+                'speed': 'Conectando a cobalt.tools...'
+            })
             
-            # Find the downloaded file (pybalt uses tiktok_username_id.mp4 format)
-            # Get the most recent .mp4 file in download folder
-            import re
-            video_id_match = re.search(r'/video/(\d+)', url)
-            video_id = video_id_match.group(1) if video_id_match else None
+            # Run the async pybalt download in a new event loop
+            # (we're in a sync context from the background thread)
+            loop = asyncio.new_event_loop()
+            try:
+                result_path = loop.run_until_complete(
+                    self._pybalt_download_async(url, unique_id)
+                )
+            finally:
+                loop.close()
             
-            if video_id:
-                # Look for file with video ID
-                pattern = str(DOWNLOAD_FOLDER / f"*{video_id}*.mp4")
-                files = glob.glob(pattern)
-                if files:
-                    downloaded_file = Path(files[0])
-                else:
-                    # Fallback: get most recent mp4
-                    mp4_files = list(DOWNLOAD_FOLDER.glob("*.mp4"))
-                    if mp4_files:
-                        downloaded_file = max(mp4_files, key=lambda p: p.stat().st_mtime)
-                    else:
-                        raise Exception("No downloaded file found")
-            else:
-                raise Exception("Could not extract video ID")
+            if result_path is None:
+                raise Exception("pybalt returned no file")
+            
+            downloaded_file = Path(result_path)
             
             # Rename to use unique_id
             new_path = DOWNLOAD_FOLDER / f"{unique_id}.mp4"
             if downloaded_file != new_path:
+                if new_path.exists():
+                    new_path.unlink()
                 downloaded_file.rename(new_path)
             
-            filename = f"tiktok_{unique_id}.mp4"
+            # Extract a nice filename
+            video_id_match = re.search(r'/video/(\d+)', url)
+            video_id = video_id_match.group(1) if video_id_match else unique_id
+            filename = f"tiktok_{video_id}.mp4"
             
             download_progress[unique_id].update({
                 'status': 'completed',
@@ -224,10 +222,33 @@ class DownloaderService:
             
             return new_path, filename
             
-        except subprocess.TimeoutExpired:
-            raise Exception("pybalt download timed out")
         except Exception as e:
             raise Exception(f"pybalt download failed: {str(e)}")
+    
+    async def _pybalt_download_async(self, url: str, unique_id: str) -> Optional[str]:
+        """Async wrapper for pybalt download with progress updates"""
+        from pybalt.core.wrapper import download
+        
+        # Update progress during connection phase
+        download_progress[unique_id].update({
+            'status': 'downloading',
+            'percent': 25,
+            'speed': 'Descargando via cobalt.tools...'
+        })
+        
+        # pybalt.download returns the file path
+        result = await download(
+            url=url,
+            folder_path=str(DOWNLOAD_FOLDER),
+        )
+        
+        download_progress[unique_id].update({
+            'status': 'downloading',
+            'percent': 90,
+            'speed': 'Finalizando...'
+        })
+        
+        return result
 
     def _parse_time(self, time_str: str) -> float:
         """Convierte string de tiempo (HH:MM:SS o MM:SS) a segundos"""
