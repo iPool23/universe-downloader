@@ -1,12 +1,12 @@
 @echo off
 chcp 65001 >nul
 echo ============================================================
-echo   UNIVERSE DOWNLOADER - BUILD COMPLETO
+echo   UNIVERSE DOWNLOADER - BUILD LIGERO
 echo ============================================================
 echo.
 
-echo [1/2] Compilando ejecutable...
-python scripts\build.py
+echo [1/2] Compilando ejecutable ligero (sin IA)...
+python scripts\build.py --lite
 if %errorlevel% neq 0 (
     echo.
     echo ✗ Error en la compilación
@@ -16,7 +16,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [2/2] Creando paquete de distribución...
-python scripts\create_release.py
+python scripts\create_release.py --lite
 if %errorlevel% neq 0 (
     echo.
     echo ✗ Error creando el paquete

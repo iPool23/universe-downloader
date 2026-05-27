@@ -71,8 +71,23 @@ document.querySelectorAll('.format-btn').forEach(btn => {
 });
 
 // Navigation Logic
+const appFeatures = window.APP_FEATURES || { rembg: true, outpaint: true };
+const rembgEnabled = appFeatures.rembg !== false;
+const outpaintEnabled = appFeatures.outpaint !== false;
+
+if (!outpaintEnabled) {
+    document.querySelectorAll('[data-view="outpaintView"], #outpaintView').forEach((element) => element.remove());
+}
+
+if (!rembgEnabled) {
+    document.querySelectorAll('[data-view="rembgView"], #rembgView').forEach((element) => element.remove());
+}
+
 const navItems = document.querySelectorAll('.nav-item');
-const allViews = ['downloaderView', 'imageConverterView', 'converterView', 'outpaintView', 'rembgView'];
+const allViews = ['downloaderView', 'imageConverterView', 'converterView'];
+
+if (outpaintEnabled) allViews.push('outpaintView');
+if (rembgEnabled) allViews.push('rembgView');
 
 navItems.forEach(item => {
     item.addEventListener('click', (e) => {

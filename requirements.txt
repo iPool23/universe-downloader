@@ -13,3 +13,4 @@ aiohttp>=3.13.0
 aiofiles>=25.1.0
 requests>=2.32.0
 rembg[gpu]>=2.0.75
+pyobjc>=10.3; platform_system == "Darwin"

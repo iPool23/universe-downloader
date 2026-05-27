@@ -1,19 +1,45 @@
-"""
-Aplicación principal FastAPI
+"""Aplicación principal FastAPI
 
 Autor: Pool Anthony Deza Millones
 GitHub: @iPool23
 """
+import json
+import uvicorn
+import webbrowser
+import threading
+import time
+import sys
+import os
+import logging
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-import sys
-from pathlib import Path
 
+# Fix para ejecutar sin consola (windowed mode)
+# Cuando no hay consola, stdout/stderr son None y uvicorn falla
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w')
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w')
+
+# Suprimir errores de conexión cerrada (común en Windows)
+class ConnectionResetFilter(logging.Filter):
+    def filter(self, record):
+        msg = str(record.getMessage())
+        return 'ConnectionResetError' not in msg and 'WinError 10054' not in msg
+
+# Aplicar filtro a los loggers de asyncio y uvicorn
+for logger_name in ['asyncio', 'uvicorn.error', 'uvicorn.access']:
+    logger = logging.getLogger(logger_name)
+    logger.addFilter(ConnectionResetFilter())
+
+# Agregar el directorio raíz al path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.api import router as api_router
 
-from src.config import DOWNLOADS_DIR
+from src.api import router as api_router
+from src.config import DOWNLOADS_DIR, get_feature_flags
 
 # Rutas
 BASE_DIR = Path(__file__).parent.parent
@@ -50,7 +76,9 @@ async def favicon():
 async def home():
     """Página principal"""
     html_path = Path(__file__).parent / "views" / "index.html"
-    return html_path.read_text(encoding='utf-8')
+    html = html_path.read_text(encoding='utf-8')
+    feature_flags = json.dumps(get_feature_flags(), ensure_ascii=False, separators=(",", ":"))
+    return html.replace('{"rembg":true,"outpaint":true}', feature_flags)
 
 
 @app.get("/health")

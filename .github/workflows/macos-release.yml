@@ -1,0 +1,138 @@
+name: Build macOS App
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-macos:
+    runs-on: macos-13
+    timeout-minutes: 90
+
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Install FFmpeg for macOS
+        run: |
+          brew install ffmpeg
+
+          FFMPEG_PREFIX="$(brew --prefix ffmpeg)"
+          mkdir -p mac/bin
+          cp "$FFMPEG_PREFIX/bin/ffmpeg" mac/bin/ffmpeg
+          cp "$FFMPEG_PREFIX/bin/ffprobe" mac/bin/ffprobe
+          chmod +x mac/bin/ffmpeg mac/bin/ffprobe
+
+      - name: Generate macOS icon
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          source = Path("public/imgs/favicon.ico")
+          if not source.exists():
+              raise SystemExit("public/imgs/favicon.ico not found")
+
+          iconset = Path("mac/icon.iconset")
+          iconset.mkdir(parents=True, exist_ok=True)
+
+          image = Image.open(source)
+          sizes = [16, 32, 128, 256, 512]
+
+          for size in sizes:
+              for scale in (1, 2):
+                  dimension = size * scale
+                  resized = image.resize((dimension, dimension), Image.Resampling.LANCZOS)
+                  suffix = "@2x" if scale == 2 else ""
+                  output = iconset / f"icon_{size}x{size}{suffix}.png"
+                  resized.save(output)
+          PY
+
+          iconutil -c icns mac/icon.iconset -o mac/icon.icns
+          rm -rf mac/icon.iconset
+
+      - name: Build the app bundle
+        run: python3 scripts/build.py --lite
+
+      - name: Create the distribution zip
+        run: python3 scripts/create_release.py --lite
+
+      - name: Locate release zip
+        id: package
+        run: |
+          ZIP_FILE="$(find . -maxdepth 1 -name 'UniverseDownloader_v*_macOS.zip' -print -quit)"
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No release zip was generated"
+            exit 1
+          fi
+          echo "zip_file=$ZIP_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Create DMG
+        run: |
+          set -e
+
+          STAGING_DIR="dmg-staging"
+          DMG_FILE="dist/UniverseDownloader-macOS.dmg"
+
+          rm -rf "$STAGING_DIR" "$DMG_FILE"
+          mkdir -p "$STAGING_DIR"
+
+          ditto "dist/UniverseDownloader.app" "$STAGING_DIR/UniverseDownloader.app"
+          ln -s /Applications "$STAGING_DIR/Applications"
+
+          hdiutil create \
+            -volname "Universe Downloader" \
+            -srcfolder "$STAGING_DIR" \
+            -ov \
+            -format UDZO \
+            "$DMG_FILE"
+
+          rm -rf "$STAGING_DIR"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: UniverseDownloader-macOS
+          path: |
+            ${{ steps.package.outputs.zip_file }}
+            dist/UniverseDownloader-macOS.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Universe Downloader ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            ${{ steps.package.outputs.zip_file }}
+            dist/UniverseDownloader-macOS.dmg

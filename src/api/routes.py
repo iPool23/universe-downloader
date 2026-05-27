@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.models import DownloadRequest, VideoInfo
 from src.services import DownloaderService
 from src.services.downloader import download_progress, downloads_to_cancel, conversion_progress
-from src.config import DOWNLOADS_DIR
+from src.config import DOWNLOADS_DIR, ENABLE_OUTPAINT, ENABLE_REMBG
 
 router = APIRouter(prefix="/api", tags=["download"])
 downloader = DownloaderService()
@@ -506,6 +506,9 @@ async def convert_image(
 @router.get("/outpaint/status")
 async def outpaint_status():
     """Verifica si la GPU está disponible y el modelo cargado."""
+    if not ENABLE_OUTPAINT:
+        raise HTTPException(status_code=404, detail="Outpainting no disponible en esta versión")
+
     try:
         from src.services.outpainting_service import outpainting_service
         gpu_info = outpainting_service.get_gpu_info()
@@ -519,6 +522,9 @@ async def outpaint_status():
 @router.post("/outpaint/load")
 async def outpaint_load_model():
     """Carga el modelo SDXL Inpainting en la GPU (descarga ~7GB la primera vez)."""
+    if not ENABLE_OUTPAINT:
+        raise HTTPException(status_code=404, detail="Outpainting no disponible en esta versión")
+
     try:
         from src.services.outpainting_service import outpainting_service
         
@@ -541,6 +547,9 @@ async def outpaint_load_model():
 @router.post("/outpaint/unload")
 async def outpaint_unload_model():
     """Descarga el modelo de la GPU para liberar VRAM."""
+    if not ENABLE_OUTPAINT:
+        raise HTTPException(status_code=404, detail="Outpainting no disponible en esta versión")
+
     try:
         from src.services.outpainting_service import outpainting_service
         outpainting_service.unload_model()
@@ -569,6 +578,9 @@ async def outpaint_image(
         steps: Pasos de inferencia (15-50, default 20)
         guidance: Guidance scale (1-20, default 7.5)
     """
+    if not ENABLE_OUTPAINT:
+        raise HTTPException(status_code=404, detail="Outpainting no disponible en esta versión")
+
     from PIL import Image as PILImage
     import io
     
@@ -670,6 +682,9 @@ async def remove_background_api(
     decontaminate: bool = Form(False)
 ):
     """Remueve el fondo de una imagen usando rembg."""
+    if not ENABLE_REMBG:
+        raise HTTPException(status_code=404, detail="Quitar Fondo no disponible en esta versión")
+
     from PIL import Image as PILImage
     import shutil
     import uuid as _uuid

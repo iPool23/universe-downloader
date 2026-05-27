@@ -6,6 +6,11 @@
 📦 CONTENIDO DEL PAQUETE:
    • UniverseDownloader.exe - Aplicación principal
 
+
+    • Edición ligera sin IA
+    • Incluye Video, Imagen y Convertir
+
+
 🚀 CÓMO USAR:
 
    1. Ejecuta "UniverseDownloader.exe"

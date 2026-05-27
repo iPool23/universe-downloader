@@ -13,6 +13,8 @@ import os
 import logging
 from pathlib import Path
 
+IS_MAC = sys.platform == 'darwin'
+
 # Fix para ejecutar sin consola (windowed mode)
 # Cuando no hay consola, stdout/stderr son None y uvicorn falla
 if sys.stdout is None:
@@ -51,9 +53,22 @@ def get_icon_path():
         # Si es script normal
         base_dir = Path(__file__).parent.parent
         
-    icon_path = base_dir / "public" / "imgs" / "favicon.ico"
-    if icon_path.exists():
-        return str(icon_path)
+    icon_candidates = []
+    if IS_MAC:
+        icon_candidates.extend([
+            base_dir / "mac" / "icon.icns",
+            base_dir / "public" / "imgs" / "favicon.ico",
+        ])
+    else:
+        icon_candidates.extend([
+            base_dir / "public" / "imgs" / "favicon.ico",
+            base_dir / "mac" / "icon.icns",
+        ])
+
+    for icon_path in icon_candidates:
+        if icon_path.exists():
+            return str(icon_path)
+
     return None
 
 
@@ -141,8 +156,8 @@ def main():
         # Iniciar servidor en hilo separado
         server_thread = threading.Thread(target=run_server, daemon=True)
         server_thread.start()
-        
-        # Ejecutar el tray icon en el hilo principal (requerido en Windows)
+
+        # Ejecutar el tray icon en el hilo principal
         icon.run()
     else:
         # Fallback: ejecutar sin tray icon
