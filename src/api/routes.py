@@ -162,9 +162,16 @@ async def get_download_file(download_id: str):
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
     
     def cleanup_download_data():
-        """Limpiar datos de progreso y resultados tras enviar el archivo."""
+        """Limpia datos de progreso/resultados en memoria Y el archivo en disco tras enviarlo —
+        si no, cada video descargado se queda para siempre en el servidor (a diferencia de la
+        conversión H.264 y las imágenes, que sí se autodestruyen)."""
         download_progress.pop(download_id, None)
         download_results.pop(download_id, None)
+        try:
+            if file_path.exists():
+                file_path.unlink()
+        except Exception:
+            pass
     
     return FileResponse(
         path=file_path,
@@ -367,6 +374,52 @@ async def get_conversion_file(convert_id: str):
 # IMAGE FORMAT CONVERSION ENDPOINT
 # =====================================================
 
+def _normalize_image_format(target_format: str) -> str:
+    target_format = target_format.lower().strip()
+    return 'jpg' if target_format == 'jpeg' else target_format
+
+
+def _convert_image_file(input_path: Path, output_path: Path, target_format: str, quality: int, width: int, height: int) -> None:
+    """Convierte una imagen ya guardada en disco. Usado por el endpoint de una imagen y el de lote,
+    para no repetir la lógica de Pillow en dos lugares."""
+    from PIL import Image
+
+    img = Image.open(input_path)
+
+    if width > 0 and height > 0:
+        img = img.resize((width, height), Image.LANCZOS)
+    elif width > 0:
+        ratio = width / img.width
+        img = img.resize((width, int(img.height * ratio)), Image.LANCZOS)
+    elif height > 0:
+        ratio = height / img.height
+        img = img.resize((int(img.width * ratio), height), Image.LANCZOS)
+
+    if target_format in ('jpg', 'jpeg'):
+        if img.mode in ('RGBA', 'LA', 'PA'):
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[-1])
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+        img.save(str(output_path), 'JPEG', quality=quality, optimize=True)
+
+    elif target_format == 'png':
+        if img.mode == 'CMYK':
+            img = img.convert('RGB')
+        img.save(str(output_path), 'PNG', optimize=True)
+
+    elif target_format == 'webp':
+        img.save(str(output_path), 'WEBP', quality=quality, method=4)
+
+    elif target_format == 'avif':
+        if img.mode == 'CMYK':
+            img = img.convert('RGB')
+        img.save(str(output_path), 'AVIF', quality=quality)
+
+    img.close()
+
+
 @router.post("/convert-image")
 async def convert_image(
     file: UploadFile = File(...),
@@ -387,10 +440,8 @@ async def convert_image(
         height: Alto deseado en píxeles (0 = mantener original)
     """
     valid_formats = {'png', 'jpg', 'jpeg', 'webp', 'avif'}
-    target_format = target_format.lower().strip()
-    if target_format == 'jpeg':
-        target_format = 'jpg'
-    
+    target_format = _normalize_image_format(target_format)
+
     if target_format not in valid_formats:
         raise HTTPException(status_code=400, detail=f"Formato no soportado: {target_format}")
     
@@ -421,47 +472,7 @@ async def convert_image(
     output_path = Path(DOWNLOADS_DIR) / f"img_output_{convert_id}.{output_ext}"
     
     try:
-        from PIL import Image
-        
-        img = Image.open(input_path)
-        
-        # Resize if dimensions specified
-        if width > 0 and height > 0:
-            img = img.resize((width, height), Image.LANCZOS)
-        elif width > 0:
-            ratio = width / img.width
-            img = img.resize((width, int(img.height * ratio)), Image.LANCZOS)
-        elif height > 0:
-            ratio = height / img.height
-            img = img.resize((int(img.width * ratio), height), Image.LANCZOS)
-        
-        # Handle transparency: RGBA -> RGB for formats that don't support alpha
-        if target_format in ('jpg', 'jpeg'):
-            if img.mode in ('RGBA', 'LA', 'PA'):
-                # Create white background
-                background = Image.new('RGB', img.size, (255, 255, 255))
-                background.paste(img, mask=img.split()[-1])  # Use alpha channel as mask
-                img = background
-            elif img.mode != 'RGB':
-                img = img.convert('RGB')
-            
-            img.save(str(output_path), 'JPEG', quality=quality, optimize=True)
-        
-        elif target_format == 'png':
-            if img.mode == 'CMYK':
-                img = img.convert('RGB')
-            img.save(str(output_path), 'PNG', optimize=True)
-        
-        elif target_format == 'webp':
-            img.save(str(output_path), 'WEBP', quality=quality, method=4)
-        
-        elif target_format == 'avif':
-            if img.mode == 'CMYK':
-                img = img.convert('RGB')
-            img.save(str(output_path), 'AVIF', quality=quality)
-        
-        img.close()
-        
+        _convert_image_file(input_path, output_path, target_format, quality, width, height)
     except Exception as e:
         # Cleanup on error
         if input_path.exists():
@@ -495,6 +506,95 @@ async def convert_image(
         path=output_path,
         filename=output_filename,
         media_type=media_types.get(target_format, 'application/octet-stream'),
+        background=BackgroundTask(cleanup)
+    )
+
+
+@router.post("/convert-images-batch")
+async def convert_images_batch(
+    files: List[UploadFile] = File(...),
+    target_format: str = "webp",
+    quality: int = 85,
+    width: int = 0,
+    height: int = 0
+):
+    """
+    Convierte varias imágenes a la vez al mismo formato/calidad y las entrega juntas
+    en un .zip. Las que fallan (formato corrupto, etc.) no detienen a las demás — se
+    listan aparte en un manifiesto dentro del zip.
+    """
+    import zipfile
+
+    valid_formats = {'png', 'jpg', 'jpeg', 'webp', 'avif'}
+    target_format = _normalize_image_format(target_format)
+    if target_format not in valid_formats:
+        raise HTTPException(status_code=400, detail=f"Formato no soportado: {target_format}")
+    if not files:
+        raise HTTPException(status_code=400, detail="No se recibió ninguna imagen")
+
+    quality = max(10, min(100, quality))
+    valid_input_exts = {'.png', '.jpg', '.jpeg', '.webp', '.avif', '.bmp', '.tiff', '.tif'}
+    output_ext = 'jpg' if target_format == 'jpg' else target_format
+
+    batch_id = str(uuid.uuid4())[:8]
+    temp_paths: List[Path] = []
+    errors: List[str] = []
+    used_names: Dict[str, int] = {}
+
+    def unique_name(stem: str) -> str:
+        name = f"{stem}.{output_ext}"
+        count = used_names.get(name, 0)
+        used_names[name] = count + 1
+        return name if count == 0 else f"{stem}_{count}.{output_ext}"
+
+    zip_path = Path(DOWNLOADS_DIR) / f"img_batch_{batch_id}.zip"
+    success_count = 0
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for i, file in enumerate(files):
+                input_ext = Path(file.filename or '').suffix.lower()
+                if input_ext not in valid_input_exts:
+                    errors.append(f"{file.filename}: formato de imagen no soportado")
+                    continue
+
+                input_path = Path(DOWNLOADS_DIR) / f"img_batch_{batch_id}_in_{i}{input_ext}"
+                output_path = Path(DOWNLOADS_DIR) / f"img_batch_{batch_id}_out_{i}.{output_ext}"
+                temp_paths.extend([input_path, output_path])
+                try:
+                    with open(input_path, "wb") as buffer:
+                        shutil.copyfileobj(file.file, buffer)
+                    _convert_image_file(input_path, output_path, target_format, quality, width, height)
+                    arcname = unique_name(Path(file.filename).stem)
+                    zf.write(output_path, arcname=arcname)
+                    success_count += 1
+                except Exception as e:
+                    errors.append(f"{file.filename}: {str(e)}")
+
+            if errors:
+                zf.writestr("errores.txt", "\n".join(errors))
+    finally:
+        for p in temp_paths:
+            try:
+                if p.exists():
+                    p.unlink()
+            except Exception:
+                pass
+
+    if success_count == 0:
+        zip_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Ninguna imagen se pudo convertir: " + "; ".join(errors))
+
+    def cleanup():
+        try:
+            if zip_path.exists():
+                zip_path.unlink()
+        except Exception:
+            pass
+
+    return FileResponse(
+        path=zip_path,
+        filename="imagenes_convertidas.zip",
+        media_type="application/zip",
         background=BackgroundTask(cleanup)
     )
 

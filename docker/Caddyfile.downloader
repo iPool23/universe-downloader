@@ -1,0 +1,24 @@
+# Bloque de Caddy para descargar.pooldeza.com. Se agrega a /etc/caddy/Caddyfile sin tocar los demás sitios.
+# TLS con certificado Origin CA de Cloudflare (válido solo detrás del proxy de Cloudflare, modo Full strict).
+descargar.pooldeza.com {
+	tls /etc/caddy/certs/descargar.pooldeza.com.pem /etc/caddy/certs/descargar.pooldeza.com.key
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		-Server
+	}
+
+	reverse_proxy 127.0.0.1:8200
+
+	log {
+		output file /var/log/caddy/descargar.pooldeza.com.log {
+			roll_size 20mb
+			roll_keep 5
+		}
+	}
+}

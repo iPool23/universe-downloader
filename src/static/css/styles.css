@@ -52,6 +52,20 @@ body.dark-mode {
   box-sizing: border-box;
 }
 
+/* Visible solo para lectores de pantalla y buscadores — da contexto sin ocupar espacio visual
+   en una UI que es, a propósito, mínima (botones e inputs, sin párrafos de por medio). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 body {
   font-family: "Inter", "Segoe UI", sans-serif;
   /* Maintain requested background gradient */
@@ -95,7 +109,11 @@ body {
 }
 
 .logo-icon {
-  font-size: 24px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .brand h2 {
@@ -215,6 +233,50 @@ body {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
   margin: 0 auto;
   transition: background 0.3s ease;
+}
+
+/* --- Aviso: FFmpeg no encontrado --- */
+.ffmpeg-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: rgba(224, 82, 82, 0.1);
+  border: 1px solid rgba(224, 82, 82, 0.35);
+  color: var(--text-primary);
+}
+
+.ffmpeg-banner i {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: #e05252;
+  margin-top: 2px;
+}
+
+.ffmpeg-banner-text {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.ffmpeg-banner-text strong {
+  color: #e05252;
+}
+
+.ffmpeg-banner-text a {
+  color: var(--accent-color);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.ffmpeg-banner-text code {
+  background: rgba(0, 0, 0, 0.15);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12.5px;
 }
 
 .card-header {
@@ -582,6 +644,42 @@ button,
   color: #28a745;
 }
 
+.modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.modal-message {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+}
+
+.modal-btn {
+  width: 100%;
+  padding: 14px 20px;
+  background: #000;
+  color: #fff;
+  border: 2px solid #000;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.modal-btn:hover {
+  background: #1a1a1a;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+.modal-btn:active {
+  transform: translateY(0);
+}
+
 /* --- Progress Bar --- */
 .progress-container {
   width: 100%;
@@ -709,48 +807,6 @@ button,
   color: var(--text-light);
   display: flex;
   gap: 10px;
-}
-
-/* --- Responsive --- */
-@media (max-width: 768px) {
-  .dashboard-wrapper {
-    display: flex;
-    flex-direction: column;
-    width: 100vw;
-    height: 100vh;
-    margin: 0;
-    border-radius: 0;
-    overflow-y: auto; /* Allow full page scroll */
-  }
-
-  .sidebar {
-    display: none; /* Hide sidebar on mobile */
-  }
-
-  .main-content {
-    padding: 20px;
-    height: auto;
-    overflow: visible;
-  }
-
-  .content-card {
-    padding: 25px;
-    box-shadow: none; /* Flatter look on mobile */
-  }
-
-  .video-details {
-    flex-direction: column;
-    gap: 15px;
-  }
-
-  .thumb-container {
-    width: 100%; /* Full width image on mobile */
-    max-width: 300px; /* But not too huge */
-  }
-
-  .format-buttons {
-    flex-direction: column;
-  }
 }
 
 /* --- Action Buttons in File List --- */
@@ -905,11 +961,11 @@ input:checked + .slider:before {
 
 /* --- Upload Area --- */
 .upload-zone {
-  border: 2px dashed #e2e8f0;
+  border: 2px dashed var(--border-input);
   border-radius: 12px;
   padding: 40px;
   text-align: center;
-  background: #f8fafc;
+  background: var(--bg-input);
   cursor: pointer;
   transition: all 0.2s ease;
   margin-bottom: 20px;
@@ -917,24 +973,60 @@ input:checked + .slider:before {
 
 .upload-zone:hover, .upload-zone.dragover {
   border-color: var(--accent-color);
-  background: #f1f5f9;
+  background: var(--bg-file-item);
 }
 
 .upload-content h3 {
   font-size: 18px;
   margin-bottom: 8px;
-  color: #1a1a1a;
+  color: var(--text-primary);
 }
 
 .upload-content p {
   font-size: 14px;
-  color: #64748b;
+  color: var(--text-muted);
+}
+
+/* --- Lista de conversión por lotes (varias imágenes a la vez) --- */
+.img-batch-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  margin-bottom: 20px;
+  padding-right: 4px;
+}
+
+.img-batch-list .file-item {
+  padding: 10px 15px;
+}
+
+.img-batch-status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+  background: var(--bg-card);
+  color: var(--text-muted);
+}
+
+.img-batch-status.done {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.img-batch-status.error {
+  color: #e05252;
+  background: rgba(224, 82, 82, 0.12);
 }
 
 .disabled-btn {
-  background: #e2e8f0 !important;
-  color: #94a3b8 !important;
-  border-color: #e2e8f0 !important;
+  background: var(--bg-file-item) !important;
+  color: var(--text-light) !important;
+  border-color: var(--border-color) !important;
   cursor: not-allowed !important;
 }
 
@@ -1276,4 +1368,246 @@ input:checked + .slider:before {
 
 .spin {
   animation: spin 1s linear infinite;
+}
+
+/* =====================================================
+   TAREAS EN SEGUNDO PLANO (descargas / conversiones)
+   Tarjetas flotantes en vez de un modal que tapa toda la app — así se puede seguir usando el
+   resto de la app (escanear otro video, cambiar de pestaña) mientras una tarea corre.
+   ===================================================== */
+.task-manager {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 900;
+  display: flex;
+  flex-direction: column-reverse; /* la tarea más nueva aparece pegada abajo, empuja a las demás hacia arriba */
+  gap: 10px;
+  width: 320px;
+  max-width: calc(100vw - 40px);
+  pointer-events: none; /* el hueco entre tarjetas no debe bloquear clics al contenido de detrás */
+}
+
+.task-card {
+  pointer-events: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 10px 30px var(--shadow-color);
+  animation: taskCardIn 0.2s ease-out;
+}
+
+@keyframes taskCardIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.task-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.task-card-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--bg-input);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-color);
+  flex-shrink: 0;
+}
+
+.task-card-icon.done { color: #22c55e; }
+.task-card-icon.error { color: #e05252; }
+
+.task-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-card-status {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.task-card-close {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-light);
+  transition: background 0.15s, color 0.15s;
+}
+
+.task-card-close:hover {
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.task-card .progress-bar {
+  height: 6px;
+  margin: 0 0 6px 0;
+}
+
+.task-card-percent {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-color);
+}
+
+/* =====================================================
+   RESPONSIVE (celular/tablet) — a propósito al final del archivo: son overrides de reglas
+   declaradas más arriba (barra lateral, tarjetas, etc.) y necesitan ganar por orden de cascada,
+   no solo por especificidad, ya que usan el mismo selector de una sola clase que el original.
+   ===================================================== */
+@media (max-width: 768px) {
+  .dashboard-wrapper {
+    display: flex;
+    flex-direction: column;
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    border-radius: 0;
+    overflow-y: auto; /* Allow full page scroll */
+  }
+
+  /* La barra lateral se vuelve una barra horizontal arriba: sigue siendo la única forma de
+     cambiar de sección, así que ocultarla del todo (como antes) dejaba el celular sin navegación. */
+  .sidebar {
+    flex-direction: row;
+    align-items: center;
+    padding: 10px 16px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-light);
+    overflow-x: auto;
+    flex-shrink: 0;
+  }
+
+  .brand {
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+
+  .brand h2 {
+    display: none; /* el ícono solo ya identifica la app; el espacio horizontal es limitado */
+  }
+
+  .nav-menu {
+    flex-direction: row;
+    flex: 1 1 auto; /* toma el espacio entre el logo y el interruptor... */
+    justify-content: center; /* ...y centra los íconos ahí, en vez de pegarlos a la izquierda con un hueco vacío antes del interruptor */
+    gap: 4px;
+  }
+
+  .nav-item {
+    padding: 8px 12px;
+    white-space: nowrap;
+    font-size: 13px;
+    background: var(--bg-input); /* caja visible siempre, no solo cuando está activo — si no, los inactivos parecen íconos sueltos sin botón */
+    border: 1px solid var(--border-color);
+  }
+
+  .nav-item.active {
+    border-color: #000;
+  }
+
+  /* Footer del sidebar de escritorio (padding-top:20px + borde) reinterpretado como una caja
+     compacta al final de la barra horizontal — sin esto, ese padding/borde vertical infla toda
+     la barra a ~110px de alto en vez de los ~50px de una barra de navegación normal. */
+  .theme-toggle-container {
+    margin-top: 0;
+    margin-left: auto;
+    padding: 0;
+    border-top: none;
+    flex-shrink: 0;
+  }
+
+  .theme-toggle {
+    padding: 6px 10px;
+    /* La caja quedó del tamaño justo de sol+switch+luna, así que "space-between" no tenía casi
+       espacio que repartir y el sol/luna quedaban pegados al switch. Un gap fijo asegura el mismo
+       aire en los tres huecos, a juego con el margen a los bordes. */
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .switch {
+    margin: 0; /* el margen vertical original (pensado para la barra lateral de escritorio) lo
+                  descentraba respecto a los íconos de sol/luna en esta barra horizontal */
+  }
+
+  .main-content {
+    flex: 1 1 auto; /* llena el alto restante: si no, se ve el fondo del wrapper debajo del contenido corto */
+    padding: 20px;
+    height: auto;
+    overflow-y: auto;
+  }
+
+  .content-card {
+    padding: 25px;
+    box-shadow: none; /* Flatter look on mobile */
+  }
+
+  .img-card-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .video-details {
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .thumb-container {
+    width: 100%; /* Full width image on mobile */
+    max-width: 300px; /* But not too huge */
+  }
+
+  .format-buttons {
+    flex-direction: column;
+  }
+
+  .modal {
+    padding: 25px;
+  }
+}
+
+@media (max-width: 480px) {
+  .content-card {
+    padding: 18px;
+  }
+
+  .nav-item .nav-label {
+    display: none; /* en pantallas muy angostas solo caben los íconos */
+  }
+
+  .nav-item {
+    padding: 8px 10px;
+  }
+
+  .task-manager {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+    max-width: none;
+  }
 }

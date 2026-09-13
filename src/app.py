@@ -63,6 +63,30 @@ app.mount("/content", StaticFiles(directory=DOWNLOADS_DIR), name="content")
 app.include_router(api_router)
 
 
+# Respaldo de limpieza: cada endpoint que entrega un archivo ya lo borra apenas se envía, pero una
+# descarga cancelada, una pestaña cerrada a medias o un error dejan el archivo huérfano en disco sin
+# nada que lo borre — sin este barrido se quedarían ahí para siempre y terminarían llenando el disco.
+DOWNLOAD_MAX_AGE_SECONDS = 2 * 60 * 60  # 2 horas: de sobra para cualquier descarga/conversión real
+CLEANUP_INTERVAL_SECONDS = 30 * 60
+
+
+def _cleanup_orphaned_downloads():
+    while True:
+        time.sleep(CLEANUP_INTERVAL_SECONDS)
+        try:
+            now = time.time()
+            for entry in Path(DOWNLOADS_DIR).iterdir():
+                if entry.name.startswith('.'):
+                    continue  # p. ej. .gitkeep: no es un archivo descargado, no se toca
+                if entry.is_file() and (now - entry.stat().st_mtime) > DOWNLOAD_MAX_AGE_SECONDS:
+                    entry.unlink()
+        except Exception:
+            pass
+
+
+threading.Thread(target=_cleanup_orphaned_downloads, daemon=True).start()
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     """Favicon"""
@@ -78,7 +102,7 @@ async def home():
     html_path = Path(__file__).parent / "views" / "index.html"
     html = html_path.read_text(encoding='utf-8')
     feature_flags = json.dumps(get_feature_flags(), ensure_ascii=False, separators=(",", ":"))
-    return html.replace('{"rembg":true,"outpaint":true}', feature_flags)
+    return html.replace('{"rembg":true,"outpaint":true,"ffmpeg":true}', feature_flags)
 
 
 @app.get("/health")

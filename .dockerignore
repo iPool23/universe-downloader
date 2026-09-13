@@ -1,0 +1,17 @@
+.venv
+__pycache__
+*.pyc
+downloads/*
+!downloads/.gitkeep
+dist
+mac
+scripts
+docs
+.git
+.github
+BUILD_MACOS.command
+BUILD_RELEASE.bat
+youtubedpl.spec
+test_rembg.py
+ImagePresentation.png
+requirements.txt

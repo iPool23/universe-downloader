@@ -10,7 +10,6 @@ let selectedFormat = 'mp4';
 let selectedQuality = null;
 let selectedAudioQuality = 192; // Por defecto 192kbps
 let availableQualities = [];
-let currentDownloadId = null; // ID de la descarga actual para poder cancelarla
 
 // Theme Handling
 const themeSwitch = document.getElementById('themeSwitch');
@@ -71,9 +70,10 @@ document.querySelectorAll('.format-btn').forEach(btn => {
 });
 
 // Navigation Logic
-const appFeatures = window.APP_FEATURES || { rembg: true, outpaint: true };
+const appFeatures = window.APP_FEATURES || { rembg: true, outpaint: true, ffmpeg: true };
 const rembgEnabled = appFeatures.rembg !== false;
 const outpaintEnabled = appFeatures.outpaint !== false;
+const ffmpegEnabled = appFeatures.ffmpeg !== false;
 
 if (!outpaintEnabled) {
     document.querySelectorAll('[data-view="outpaintView"], #outpaintView').forEach((element) => element.remove());
@@ -81,6 +81,13 @@ if (!outpaintEnabled) {
 
 if (!rembgEnabled) {
     document.querySelectorAll('[data-view="rembgView"], #rembgView').forEach((element) => element.remove());
+}
+
+// Sin FFmpeg, casi ninguna descarga de video moderna funciona (YouTube separa video y audio
+// en streams distintos) — se avisa antes de que la persona pierda tiempo intentándolo.
+if (!ffmpegEnabled) {
+    const banner = document.getElementById('ffmpegBanner');
+    if (banner) banner.style.display = 'flex';
 }
 
 const navItems = document.querySelectorAll('.nav-item');
@@ -113,6 +120,7 @@ navItems.forEach(item => {
 // =====================================================
 
 let selectedVideoFile = null;
+let selectedVideoBatch = [];
 
 // Initialize after page load
 document.addEventListener('DOMContentLoaded', () => {
@@ -155,25 +163,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function handleFiles(files) {
     if (files.length === 0) return;
-    const file = files[0];
 
-    // Validate size (500MB max)
-    if (file.size > 500 * 1024 * 1024) {
-        showModal('error', 'alert-circle', 'Error', 'El archivo supera el límite de 500MB');
-        return;
-    }
-
-    // Validate type
     const validExts = ['.mp4', '.mkv', '.avi', '.mov', '.webm'];
-    const filename = file.name.toLowerCase();
-    if (!validExts.some(ext => filename.endsWith(ext))) {
-        showModal('error', 'alert-circle', 'Error', 'Formato no soportado. Usa MP4, MKV, AVI, MOV o WEBM.');
-        return;
+    const valid = [];
+    for (const file of Array.from(files)) {
+        const filename = file.name.toLowerCase();
+        if (file.size > 500 * 1024 * 1024) {
+            showModal('error', 'alert-circle', 'Error', `${file.name} supera el límite de 500MB`);
+            continue;
+        }
+        if (!validExts.some(ext => filename.endsWith(ext))) {
+            showModal('error', 'alert-circle', 'Error', `${file.name}: formato no soportado. Usa MP4, MKV, AVI, MOV o WEBM.`);
+            continue;
+        }
+        valid.push(file);
     }
+    if (valid.length === 0) return;
 
+    if (valid.length === 1) {
+        handleSingleVideoSelection(valid[0]);
+    } else {
+        handleVideoBatchSelection(valid);
+    }
+}
+
+function handleSingleVideoSelection(file) {
     selectedVideoFile = file;
+    selectedVideoBatch = [];
+    document.getElementById('videoBatchList').style.display = 'none';
 
-    // Update UI
     const title = document.getElementById('uploadTitle');
     const subtitle = document.getElementById('uploadSubtitle');
     const btn = document.getElementById('uploadConvertBtn');
@@ -183,21 +201,58 @@ function handleFiles(files) {
 
     btn.classList.remove('disabled-btn');
     btn.innerText = 'Subir y Convertir a H.264';
+    btn.onclick = uploadAndConvert;
+
+    lucide.createIcons();
+}
+
+function handleVideoBatchSelection(files) {
+    selectedVideoFile = null;
+    selectedVideoBatch = files;
+
+    const title = document.getElementById('uploadTitle');
+    const subtitle = document.getElementById('uploadSubtitle');
+    const btn = document.getElementById('uploadConvertBtn');
+    const list = document.getElementById('videoBatchList');
+
+    const totalMB = (files.reduce((sum, f) => sum + f.size, 0) / (1024 * 1024)).toFixed(1);
+    title.innerHTML = `<i data-lucide="files" style="width: 24px; vertical-align: middle;"></i> ${files.length} videos seleccionados`;
+    subtitle.innerHTML = `${totalMB} MB en total - se convierten uno por uno`;
+
+    list.style.display = 'flex';
+    list.innerHTML = files.map((file, i) => `
+        <li class="file-item" id="videoBatchItem${i}">
+            <div class="file-icon"><i data-lucide="file-video" style="width:18px;height:18px;"></i></div>
+            <div class="file-info">
+                <div class="file-name">${file.name}</div>
+                <div class="file-meta"><span>${(file.size / (1024 * 1024)).toFixed(1)} MB</span></div>
+            </div>
+            <span class="img-batch-status" id="videoBatchStatus${i}">Pendiente</span>
+        </li>`).join('');
+
+    btn.classList.remove('disabled-btn');
+    btn.innerText = `Convertir todos (${files.length})`;
+    btn.onclick = uploadAndConvertBatch;
 
     lucide.createIcons();
 }
 
 function resetUploadZone() {
     selectedVideoFile = null;
+    selectedVideoBatch = [];
     const title = document.getElementById('uploadTitle');
     const subtitle = document.getElementById('uploadSubtitle');
     const btn = document.getElementById('uploadConvertBtn');
+    const list = document.getElementById('videoBatchList');
 
-    title.innerHTML = 'Haz clic o arrastra un archivo aquí';
-    subtitle.innerHTML = 'Formatos soportados: MP4, WEBM, MKV, AVI, MOV (Máx 500MB)';
+    title.innerHTML = 'Haz clic o arrastra uno o más archivos aquí';
+    subtitle.innerHTML = 'Formatos soportados: MP4, WEBM, MKV, AVI, MOV (Máx 500MB c/u) · puedes elegir varios a la vez';
 
     btn.classList.add('disabled-btn');
     btn.innerText = 'Selecciona un archivo primero';
+    btn.onclick = uploadAndConvert;
+    list.style.display = 'none';
+    list.innerHTML = '';
     document.getElementById('videoFileInput').value = '';
 }
 
@@ -328,9 +383,99 @@ function formatTime(seconds) {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+// =====================================================
+// TASK MANAGER — tarjetas flotantes para tareas de fondo (descargas / conversiones)
+// En vez de un modal que tapa toda la app, cada tarea vive en su propia tarjeta en la esquina;
+// se puede seguir navegando, escaneando otro video o subiendo otro archivo mientras corren.
+// Máximo MAX_CONCURRENT_TASKS a la vez (para no saturar la conexión ni ffmpeg); el resto espera en cola.
+// =====================================================
+const MAX_CONCURRENT_TASKS = 3;
+let activeTaskCount = 0;
+const taskWaitQueue = [];
+const taskCancelHandlers = new Map();
+
+function enqueueTask(taskId, runner) {
+    if (activeTaskCount < MAX_CONCURRENT_TASKS) {
+        activeTaskCount++;
+        runner().finally(() => {
+            activeTaskCount--;
+            const next = taskWaitQueue.shift();
+            if (next) enqueueTask(next.taskId, next.runner);
+        });
+    } else {
+        updateTaskCard(taskId, { status: 'En cola — esperando su turno...' });
+        taskWaitQueue.push({ taskId, runner });
+    }
+}
+
+function createTaskCard(taskId, title, iconName) {
+    const manager = document.getElementById('taskManager');
+    if (!manager) return;
+    const card = document.createElement('div');
+    card.className = 'task-card';
+    card.id = `task-${taskId}`;
+    card.innerHTML = `
+        <div class="task-card-header">
+            <div class="task-card-icon" id="taskIcon-${taskId}"><i data-lucide="${iconName}" style="width: 16px; height: 16px;"></i></div>
+            <div class="task-card-info">
+                <div class="task-card-title" title="${title}">${title}</div>
+                <div class="task-card-status" id="taskStatus-${taskId}">En cola...</div>
+            </div>
+            <span class="task-card-percent" id="taskPercent-${taskId}"></span>
+            <button class="task-card-close" title="Cancelar" onclick="cancelTask('${taskId}')">
+                <i data-lucide="x" style="width: 14px; height: 14px;"></i>
+            </button>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="taskFill-${taskId}" style="width: 0%"></div></div>
+    `;
+    manager.appendChild(card);
+    lucide.createIcons();
+    return card;
+}
+
+function updateTaskCard(taskId, { percent, status, done, error } = {}) {
+    const fill = document.getElementById(`taskFill-${taskId}`);
+    const statusEl = document.getElementById(`taskStatus-${taskId}`);
+    const percentEl = document.getElementById(`taskPercent-${taskId}`);
+    const iconEl = document.getElementById(`taskIcon-${taskId}`);
+    if (!fill) return; // la tarjeta ya se cerró (p. ej. el usuario la canceló)
+
+    if (percent !== undefined) {
+        fill.style.width = `${percent}%`;
+        if (percentEl) percentEl.textContent = `${Math.round(percent)}%`;
+    }
+    if (status && statusEl) statusEl.textContent = status;
+    if (done && iconEl) {
+        iconEl.classList.add('done');
+        iconEl.innerHTML = '<i data-lucide="check" style="width: 16px; height: 16px;"></i>';
+        lucide.createIcons();
+    }
+    if (error && iconEl) {
+        iconEl.classList.add('error');
+        iconEl.innerHTML = '<i data-lucide="alert-circle" style="width: 16px; height: 16px;"></i>';
+        lucide.createIcons();
+    }
+}
+
+function removeTaskCard(taskId, delay = 0) {
+    taskCancelHandlers.delete(taskId);
+    setTimeout(() => {
+        document.getElementById(`task-${taskId}`)?.remove();
+    }, delay);
+}
+
+function setTaskCancelHandler(taskId, handler) {
+    taskCancelHandlers.set(taskId, handler);
+}
+
+function cancelTask(taskId) {
+    const handler = taskCancelHandlers.get(taskId);
+    if (handler) handler();
+    else removeTaskCard(taskId); // sin forma de cancelar el trabajo del servidor (p. ej. conversión H.264): solo se oculta la tarjeta
+}
+
 async function download() {
     const url = document.getElementById('url').value;
-    const downloadBtn = document.querySelector('.download-btn');
     const startTime = document.getElementById('startTime')?.value;
     const endTime = document.getElementById('endTime')?.value;
 
@@ -339,24 +484,36 @@ async function download() {
         return;
     }
 
-    showProgressModal();
-    downloadBtn.disabled = true;
+    const format = selectedFormat;
+    const quality = selectedQuality;
+    const audioQuality = selectedAudioQuality;
+    const title = document.querySelector('#videoInfo h3')?.textContent?.trim() || `Video (${format.toUpperCase()})`;
 
+    const taskId = 'dl-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    createTaskCard(taskId, title, format === 'mp3' ? 'music' : 'video');
+
+    // Limpia el formulario de inmediato: la tarea sigue en su tarjeta, y ya se puede escanear otra URL.
+    document.getElementById('url').value = '';
+    const videoInfo = document.getElementById('videoInfo');
+    if (videoInfo) videoInfo.style.display = 'none';
+
+    enqueueTask(taskId, () => runDownloadTask(taskId, { url, format, startTime, endTime, quality, audioQuality }));
+}
+
+async function runDownloadTask(taskId, { url, format, startTime, endTime, quality, audioQuality }) {
     try {
-        // Iniciar descarga en segundo plano
+        updateTaskCard(taskId, { status: 'Iniciando descarga...' });
         const startResponse = await fetch('/api/download/start', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                url: url,
-                format: selectedFormat,
+                url,
+                format,
                 download_id: Math.random().toString(36).substring(7),
                 start_time: startTime || null,
                 end_time: endTime || null,
-                quality: selectedFormat === 'mp4' ? selectedQuality : null,
-                audio_quality: selectedFormat === 'mp3' ? selectedAudioQuality : null
+                quality: format === 'mp4' ? quality : null,
+                audio_quality: format === 'mp3' ? audioQuality : null
             })
         });
 
@@ -366,30 +523,33 @@ async function download() {
         }
 
         const { download_id } = await startResponse.json();
-        currentDownloadId = download_id; // Guardar para poder cancelar
+        setTaskCancelHandler(taskId, () => cancelDownloadTask(taskId, download_id));
 
-        // Polling para obtener progreso
         let completed = false;
         while (!completed) {
-            await new Promise(resolve => setTimeout(resolve, 500)); // Esperar 500ms
+            await new Promise(resolve => setTimeout(resolve, 500));
 
             const progressResponse = await fetch(`/api/download/progress/${download_id}`);
             const progress = await progressResponse.json();
 
-            // Si fue cancelada, salir del loop
             if (progress.status === 'cancelled') {
-                completed = true;
-                currentDownloadId = null;
-                return; // El modal de cancelación ya se mostró
+                return; // cancelDownloadTask ya actualizó y cerró la tarjeta
             }
 
-            updateProgressModal(progress);
+            const percent = Math.round(progress.percent || 0);
+            let status;
+            if (progress.status === 'downloading') {
+                status = [progress.speed, progress.eta ? `ETA ${progress.eta}` : ''].filter(Boolean).join(' · ') || 'Descargando...';
+            } else if (progress.status === 'processing') {
+                status = 'Procesando video...';
+            } else {
+                status = 'Iniciando descarga...';
+            }
+            updateTaskCard(taskId, { percent, status });
 
             if (progress.status === 'completed') {
                 completed = true;
-                currentDownloadId = null;
 
-                // Descargar el archivo
                 const fileResponse = await fetch(`/api/download/file/${download_id}`);
                 if (!fileResponse.ok) {
                     throw new Error('Error al obtener el archivo');
@@ -401,7 +561,7 @@ async function download() {
                 a.href = downloadUrl;
 
                 const contentDisposition = fileResponse.headers.get('content-disposition');
-                let filename = 'video.' + selectedFormat;
+                let filename = 'video.' + format;
                 if (contentDisposition) {
                     const matches = contentDisposition.match(/filename="?(.+)"?/);
                     if (matches && matches[1]) {
@@ -415,86 +575,28 @@ async function download() {
                 window.URL.revokeObjectURL(downloadUrl);
                 a.remove();
 
-                showModal('success', 'check-circle-2', '¡Descarga Completada!', 'El archivo se ha guardado correctamente');
+                updateTaskCard(taskId, { percent: 100, status: 'Descargado ✓', done: true });
+                removeTaskCard(taskId, 4000);
             } else if (progress.status === 'error') {
                 throw new Error(progress.error || 'Error durante la descarga');
             }
         }
     } catch (error) {
-        showModal('error', 'x-circle', 'Error', error.message);
-    } finally {
-        downloadBtn.disabled = false;
+        updateTaskCard(taskId, { status: error.message, error: true });
+        removeTaskCard(taskId, 6000);
     }
 }
 
-function showProgressModal() {
-    const modalOverlay = document.getElementById('modalOverlay');
-    const modalContent = document.getElementById('modalContent');
-
-    modalContent.innerHTML = `
-        <div class="modal-title">Descargando...</div>
-        <div class="progress-container">
-            <div class="progress-bar">
-                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
-            </div>
-            <div class="progress-info">
-                <span id="progressPercent">0%</span>
-                <span id="progressSpeed"></span>
-            </div>
-            <div class="progress-details" id="progressDetails">Iniciando descarga...</div>
-        </div>
-        <button class="modal-btn cancel-btn" onclick="cancelDownload()">
-            <i data-lucide="x" style="width: 16px; height: 16px;"></i> Cancelar Descarga
-        </button>
-    `;
-
-    modalOverlay.classList.add('show');
-    lucide.createIcons();
-}
-
-async function cancelDownload() {
-    if (!currentDownloadId) return;
-
+async function cancelDownloadTask(taskId, downloadId) {
     try {
-        const response = await fetch(`/api/download/cancel/${currentDownloadId}`, {
-            method: 'POST'
-        });
+        const response = await fetch(`/api/download/cancel/${downloadId}`, { method: 'POST' });
         const result = await response.json();
-
         if (result.cancelled) {
-            closeModal();
-            showModal('error', 'x-circle', 'Descarga Cancelada', 'La descarga ha sido cancelada');
+            updateTaskCard(taskId, { status: 'Cancelada' });
+            removeTaskCard(taskId, 1200);
         }
     } catch (error) {
         console.error('Error al cancelar:', error);
-    }
-}
-
-function updateProgressModal(progress) {
-    const progressFill = document.getElementById('progressFill');
-    const progressPercent = document.getElementById('progressPercent');
-    const progressSpeed = document.getElementById('progressSpeed');
-    const progressDetails = document.getElementById('progressDetails');
-
-    if (!progressFill) return;
-
-    const percent = Math.round(progress.percent || 0);
-    progressFill.style.width = `${percent}%`;
-    progressPercent.textContent = `${percent}%`;
-
-    if (progress.speed) {
-        progressSpeed.textContent = progress.speed;
-    }
-
-    if (progress.status === 'downloading') {
-        const downloaded = progress.downloaded || '';
-        const total = progress.total || '';
-        const eta = progress.eta ? `ETA: ${progress.eta}` : '';
-        progressDetails.textContent = `${downloaded} / ${total} ${eta}`.trim();
-    } else if (progress.status === 'processing') {
-        progressDetails.textContent = 'Procesando video...';
-    } else if (progress.status === 'starting') {
-        progressDetails.textContent = 'Iniciando descarga...';
     }
 }
 
@@ -531,121 +633,118 @@ function closeModal() {
 // H.264 CONVERSION FUNCTIONS
 // =====================================================
 
-let currentConvertId = null;
-
 async function uploadAndConvert() {
     if (!selectedVideoFile) return;
+    const file = selectedVideoFile;
+
+    const taskId = 'cv-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    createTaskCard(taskId, file.name, 'repeat');
+    resetUploadZone(); // libera el formulario ya: se puede subir otro archivo mientras este convierte
+
+    enqueueTask(taskId, () => runConvertTask(taskId, file));
+}
+
+async function runConvertTask(taskId, file) {
+    try {
+        updateTaskCard(taskId, { status: 'Subiendo video...' });
+        const result = await convertOneVideo(file, (progress) => {
+            const percent = Math.round(progress.percent || 0);
+            const status = progress.message || (progress.status === 'converting' ? `Convirtiendo... ${percent}%` : 'Iniciando conversión...');
+            updateTaskCard(taskId, { percent, status });
+        });
+
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = `/api/convert/download/${result.convertId}`;
+        a.download = result.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        updateTaskCard(taskId, { percent: 100, status: 'Convertido y descargado ✓', done: true });
+        removeTaskCard(taskId, 4000);
+    } catch (error) {
+        updateTaskCard(taskId, { status: error.message, error: true });
+        removeTaskCard(taskId, 6000);
+    }
+}
+
+/** Convierte un solo video ya subido — usado tanto por uploadAndConvert (una tarjeta de tarea) como
+ * en bucle por uploadAndConvertBatch (un archivo a la vez, para no saturar ffmpeg con varias
+ * conversiones en paralelo). */
+async function convertOneVideo(file, onProgress) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const startResponse = await fetch('/api/upload-convert', { method: 'POST', body: formData });
+    if (!startResponse.ok) {
+        const error = await startResponse.json();
+        throw new Error(error.detail || 'Error en la subida y conversión');
+    }
+    const { convert_id } = await startResponse.json();
+
+    for (;;) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const progressResponse = await fetch(`/api/convert/progress/${convert_id}`);
+        const progress = await progressResponse.json();
+        if (onProgress) onProgress(progress);
+
+        if (progress.status === 'completed') {
+            return { convertId: convert_id, filename: progress.filename || `${file.name.replace(/\.[^.]+$/, '')}_h264.mp4` };
+        }
+        if (progress.status === 'error') {
+            throw new Error(progress.error || 'Error durante la conversión');
+        }
+    }
+}
+
+async function uploadAndConvertBatch() {
+    if (selectedVideoBatch.length === 0) return;
 
     const btn = document.getElementById('uploadConvertBtn');
     btn.disabled = true;
+    const total = selectedVideoBatch.length;
+    let okCount = 0;
 
-    const formData = new FormData();
-    formData.append('file', selectedVideoFile);
+    for (let i = 0; i < total; i++) {
+        const file = selectedVideoBatch[i];
+        const status = document.getElementById(`videoBatchStatus${i}`);
+        btn.innerText = `Convirtiendo ${i + 1}/${total}...`;
+        if (status) { status.textContent = 'Convirtiendo…'; status.className = 'img-batch-status'; }
 
-    try {
-        showConvertProgressModal();
-        document.getElementById('convertProgressDetails').textContent = 'Subiendo video (esto puede tardar unos momentos)...';
+        try {
+            const result = await convertOneVideo(file, (progress) => {
+                if (status && progress.status === 'converting' && progress.percent) {
+                    status.textContent = `${Math.round(progress.percent)}%`;
+                }
+            });
 
-        // Use proper fetch for FormData (no Content-Type set manually)
-        const startResponse = await fetch('/api/upload-convert', {
-            method: 'POST',
-            body: formData
-        });
+            // Dispara la descarga y sigue con el siguiente sin esperar al usuario.
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = `/api/convert/download/${result.convertId}`;
+            a.download = result.filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
 
-        if (!startResponse.ok) {
-            const error = await startResponse.json();
-            throw new Error(error.detail || 'Error en la subida y conversión');
+            if (status) { status.textContent = 'Listo'; status.className = 'img-batch-status done'; }
+            okCount++;
+            // Pequeña pausa entre descargas para que el navegador no las bloquee por venir muy seguidas.
+            await new Promise(resolve => setTimeout(resolve, 800));
+        } catch (error) {
+            if (status) { status.textContent = 'Error'; status.className = 'img-batch-status error'; }
         }
-
-        const { convert_id } = await startResponse.json();
-        currentConvertId = convert_id;
-
-        // Polling para obtener progreso
-        let completed = false;
-        while (!completed) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-
-            const progressResponse = await fetch(`/api/convert/progress/${convert_id}`);
-            const progress = await progressResponse.json();
-
-            updateConvertProgressModal(progress);
-
-            if (progress.status === 'completed') {
-                completed = true;
-                currentConvertId = null;
-
-                // Download the file
-                closeModal();
-                showModal('loading', 'loader', 'Descargando...', 'Tu archivo H.264 está listo. Descargando automáticamente...');
-
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = `/api/convert/download/${convert_id}`;
-                a.download = progress.filename || 'convertido_h264.mp4';
-                document.body.appendChild(a);
-                a.click();
-
-                setTimeout(() => {
-                    document.body.removeChild(a);
-                    closeModal();
-                    showModal('success', 'check-circle-2', '¡Completado!', 'Tu video ha sido convertido y descargado.');
-                    resetUploadZone();
-                }, 2000);
-
-            } else if (progress.status === 'error') {
-                throw new Error(progress.error || 'Error durante la conversión');
-            }
-        }
-    } catch (error) {
-        closeModal();
-        showModal('error', 'x-circle', 'Error', error.message);
-    } finally {
-        if (btn) btn.disabled = false;
     }
-}
 
-function showConvertProgressModal() {
-    const modalOverlay = document.getElementById('modalOverlay');
-    const modalContent = document.getElementById('modalContent');
-
-    modalContent.innerHTML = `
-        <div class="modal-icon" style="color: #000000;">
-            <i data-lucide="repeat" style="width: 48px; height: 48px;"></i>
-        </div>
-        <div class="modal-title">Convirtiendo a H.264...</div>
-        <div class="progress-container">
-            <div class="progress-bar">
-                <div class="progress-fill" id="convertProgressFill" style="width: 0%"></div>
-            </div>
-            <div class="progress-info">
-                <span id="convertProgressPercent">0%</span>
-            </div>
-            <div class="progress-details" id="convertProgressDetails">Iniciando conversión...</div>
-        </div>
-    `;
-
-    modalOverlay.classList.add('show');
-    lucide.createIcons();
-}
-
-function updateConvertProgressModal(progress) {
-    const progressFill = document.getElementById('convertProgressFill');
-    const progressPercent = document.getElementById('convertProgressPercent');
-    const progressDetails = document.getElementById('convertProgressDetails');
-
-    if (!progressFill) return;
-
-    const percent = Math.round(progress.percent || 0);
-    progressFill.style.width = `${percent}%`;
-    progressPercent.textContent = `${percent}%`;
-
-    if (progress.message) {
-        progressDetails.textContent = progress.message;
-    } else if (progress.status === 'converting') {
-        progressDetails.textContent = 'Convirtiendo video a H.264...';
-    } else if (progress.status === 'starting') {
-        progressDetails.textContent = 'Iniciando conversión...';
-    }
+    btn.disabled = false;
+    btn.innerText = `Convertir todos (${total})`;
+    showModal(
+        okCount === total ? 'success' : 'error',
+        okCount === total ? 'check-circle-2' : 'alert-circle',
+        okCount === total ? '¡Completado!' : 'Terminado con errores',
+        `${okCount} de ${total} videos se convirtieron y descargaron correctamente.`
+    );
 }
 
 // =====================================================
@@ -659,12 +758,27 @@ let imgOriginalWidth = 0;
 let imgOriginalHeight = 0;
 let previewDebounceTimer = null;
 
+// Conversión por lotes (varias imágenes a la vez)
+let selectedBatchFiles = [];
+let selectedBatchFormat = 'webp';
+
+// Recibe la lista de archivos elegida (input o drop) y decide si es una imagen (editor de
+// una sola, con vista previa y redimensionar) o varias (lista simple + mismo formato para todas).
+function handleImageFilesPicked(fileList) {
+    const files = Array.from(fileList).filter(f => f.type.startsWith('image/') || /\.(png|jpe?g|webp|avif|bmp|tiff?)$/i.test(f.name));
+    if (files.length === 0) return;
+    if (files.length === 1) {
+        handleImageSelection(files[0]);
+    } else {
+        handleBatchSelection(files);
+    }
+}
+
 // Image file input handler
 const imageFileInput = document.getElementById('imageFileInput');
 if (imageFileInput) {
     imageFileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) handleImageSelection(file);
+        handleImageFilesPicked(e.target.files);
     });
 }
 
@@ -683,11 +797,128 @@ if (imgUploadZone) {
     imgUploadZone.addEventListener('drop', (e) => {
         e.preventDefault();
         imgUploadZone.classList.remove('drag-over');
-        const file = e.dataTransfer.files[0];
-        if (file && file.type.startsWith('image/')) {
-            handleImageSelection(file);
-        }
+        handleImageFilesPicked(e.dataTransfer.files);
     });
+}
+
+// Formato para el modo por lotes
+document.querySelectorAll('.imgb-format-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.imgb-format-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedBatchFormat = btn.getAttribute('data-imgformat');
+        const qualityGroup = document.getElementById('imgBatchQualityGroup');
+        if (qualityGroup) qualityGroup.style.display = selectedBatchFormat === 'png' ? 'none' : 'block';
+        updateBatchConvertBtnText();
+    });
+});
+
+const imgBatchQualitySlider = document.getElementById('imgBatchQualitySlider');
+if (imgBatchQualitySlider) {
+    imgBatchQualitySlider.addEventListener('input', () => {
+        const val = document.getElementById('imgBatchQualityValue');
+        if (val) val.textContent = imgBatchQualitySlider.value;
+    });
+}
+
+function updateBatchConvertBtnText() {
+    const btn = document.getElementById('imgBatchConvertBtn');
+    if (btn) btn.textContent = `Convertir todas (${selectedBatchFiles.length}) a ${selectedBatchFormat.toUpperCase()}`;
+}
+
+function handleBatchSelection(files) {
+    selectedBatchFiles = files;
+
+    const uploadZone = document.getElementById('imgUploadZone');
+    const editorPanel = document.getElementById('imgEditorPanel');
+    const batchPanel = document.getElementById('imgBatchPanel');
+    if (uploadZone) uploadZone.style.display = 'none';
+    if (editorPanel) editorPanel.style.display = 'none';
+    if (batchPanel) batchPanel.style.display = 'block';
+
+    const resetBtn = document.getElementById('imgResetBtn');
+    if (resetBtn) resetBtn.style.display = 'inline-flex';
+
+    renderBatchList();
+    updateBatchConvertBtnText();
+    lucide.createIcons();
+}
+
+function renderBatchList() {
+    const list = document.getElementById('imgBatchList');
+    if (!list) return;
+    list.innerHTML = selectedBatchFiles.map((file, i) => {
+        const sizeKB = (file.size / 1024).toFixed(1);
+        const ext = file.name.split('.').pop().toUpperCase();
+        return `
+            <li class="file-item" id="imgBatchItem${i}">
+                <div class="file-icon"><i data-lucide="image" style="width:18px;height:18px;"></i></div>
+                <div class="file-info">
+                    <div class="file-name">${file.name}</div>
+                    <div class="file-meta"><span>${ext}</span><span>${sizeKB}KB</span></div>
+                </div>
+                <span class="img-batch-status" id="imgBatchStatus${i}">Pendiente</span>
+            </li>`;
+    }).join('');
+    lucide.createIcons();
+}
+
+async function convertImagesBatch() {
+    if (selectedBatchFiles.length === 0) return;
+
+    const convertBtn = document.getElementById('imgBatchConvertBtn');
+    const originalText = convertBtn.textContent;
+    convertBtn.textContent = 'Convirtiendo...';
+    convertBtn.classList.add('disabled-btn');
+    selectedBatchFiles.forEach((_, i) => {
+        const status = document.getElementById(`imgBatchStatus${i}`);
+        if (status) { status.textContent = 'Convirtiendo…'; status.className = 'img-batch-status'; }
+    });
+
+    const quality = document.getElementById('imgBatchQualitySlider')?.value || 85;
+    const formData = new FormData();
+    selectedBatchFiles.forEach(file => formData.append('files', file));
+
+    try {
+        const response = await fetch(`/api/convert-images-batch?target_format=${selectedBatchFormat}&quality=${quality}`, {
+            method: 'POST', body: formData
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Error de conversión');
+        }
+
+        // Todas se pidieron a la vez (un solo request), así que si la respuesta llegó bien
+        // se marcan todas como completadas — los errores individuales van dentro del zip.
+        selectedBatchFiles.forEach((_, i) => {
+            const status = document.getElementById(`imgBatchStatus${i}`);
+            if (status) { status.textContent = 'Listo'; status.className = 'img-batch-status done'; }
+        });
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'imagenes_convertidas.zip';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        convertBtn.textContent = `Descargado (${selectedBatchFiles.length} imágenes)`;
+        convertBtn.classList.remove('disabled-btn');
+        setTimeout(() => { convertBtn.textContent = originalText; }, 4000);
+
+    } catch (error) {
+        selectedBatchFiles.forEach((_, i) => {
+            const status = document.getElementById(`imgBatchStatus${i}`);
+            if (status) { status.textContent = 'Error'; status.className = 'img-batch-status error'; }
+        });
+        showModal('error', 'x-circle', 'Error', error.message);
+        convertBtn.textContent = originalText;
+        convertBtn.classList.remove('disabled-btn');
+    }
 }
 
 // Image format buttons
@@ -830,20 +1061,26 @@ function resetImageConverter() {
     selectedImageFile = null;
     imgOriginalWidth = 0;
     imgOriginalHeight = 0;
+    selectedBatchFiles = [];
 
-    // Show upload zone, hide editor panel and reset button
+    // Show upload zone, hide editor/batch panels and reset button
     const uploadZone = document.getElementById('imgUploadZone');
     const editorPanel = document.getElementById('imgEditorPanel');
+    const batchPanel = document.getElementById('imgBatchPanel');
     const resetBtn = document.getElementById('imgResetBtn');
     if (uploadZone) uploadZone.style.display = 'block';
     if (editorPanel) editorPanel.style.display = 'none';
+    if (batchPanel) batchPanel.style.display = 'none';
     if (resetBtn) resetBtn.style.display = 'none';
+
+    const batchList = document.getElementById('imgBatchList');
+    if (batchList) batchList.innerHTML = '';
 
     // Reset upload zone text
     const title = document.getElementById('imgUploadTitle');
     const subtitle = document.getElementById('imgUploadSubtitle');
-    if (title) title.textContent = 'Haz clic o arrastra una imagen aquí';
-    if (subtitle) subtitle.textContent = 'Formatos: PNG, JPG, WebP, AVIF, BMP, TIFF';
+    if (title) title.textContent = 'Haz clic o arrastra una o más imágenes aquí';
+    if (subtitle) subtitle.textContent = 'Formatos: PNG, JPG, WebP, AVIF, BMP, TIFF · puedes elegir varias a la vez';
 
     // Clear images
     const origImg = document.getElementById('imgPreviewOriginal');
@@ -980,7 +1217,7 @@ async function convertImage() {
         setTimeout(() => { convertBtn.textContent = originalText; }, 4000);
 
     } catch (error) {
-        alert(`Error: ${error.message}`);
+        showModal('error', 'x-circle', 'Error', error.message);
         convertBtn.textContent = originalText;
         convertBtn.classList.remove('disabled-btn');
     }
@@ -1188,7 +1425,7 @@ async function runOutpaint() {
         expandBtn.classList.remove('disabled-btn');
 
     } catch (error) {
-        alert(`Error: ${error.message}`);
+        showModal('error', 'x-circle', 'Error', error.message);
         expandBtn.innerHTML = originalHTML;
         expandBtn.classList.remove('disabled-btn');
     }
@@ -1430,7 +1667,7 @@ async function runRembg() {
         };
 
     } catch (error) {
-        alert(`Error: ${error.message}`);
+        showModal('error', 'x-circle', 'Error', error.message);
         document.getElementById('rbLoader').style.display = 'none';
         btn.innerHTML = originalBtn;
         btn.classList.remove('disabled-btn');

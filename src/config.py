@@ -29,7 +29,12 @@ FFPROBE_EXECUTABLE_NAMES = ("ffprobe.exe", "ffprobe") if IS_WINDOWS else ("ffpro
 
 
 def get_feature_flags() -> dict:
-    return FEATURE_FLAGS.copy()
+    flags = FEATURE_FLAGS.copy()
+    # Import diferido: ffmpeg_finder importa de este mismo módulo (FFMPEG_LOCATIONS), así
+    # que no se puede importar find_ffmpeg arriba sin crear un ciclo de imports.
+    from src.utils.ffmpeg_finder import find_ffmpeg
+    flags["ffmpeg"] = find_ffmpeg() is not None
+    return flags
 
 # Directorios
 BASE_DIR = Path(__file__).parent.parent

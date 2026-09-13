@@ -5,18 +5,68 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="author" content="Pool Anthony Deza Millones" />
-  <meta name="description" content="Downloader - Descarga videos y audio de múltiples plataformas en máxima calidad" />
-  <meta name="keywords" content="youtube, kick, twitch, downloader, video, audio, mp3, mp4" />
+  <meta name="description" content="Descarga videos y audio de YouTube, TikTok, Kick y Twitch en máxima calidad (hasta 4K). Convierte videos a H.264 e imágenes entre PNG, JPG, WebP y AVIF, gratis y sin instalar nada." />
+  <meta name="keywords" content="descargar youtube, descargar tiktok, downloader, convertidor de video, convertidor de imagen, mp3, mp4, h.264, webp" />
+  <meta name="robots" content="index, follow" />
   <meta name="theme-color" content="#F9BB54" />
+  <link rel="canonical" href="https://descargar.pooldeza.com/" />
   <title>Downloader</title>
+
+  <!-- Open Graph / Facebook, WhatsApp, etc. -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://descargar.pooldeza.com/" />
+  <meta property="og:site_name" content="Downloader" />
+  <meta property="og:title" content="Downloader — Descarga videos de YouTube, TikTok y más" />
+  <meta property="og:description" content="Descarga videos y audio en máxima calidad (hasta 4K), convierte a H.264 e imágenes entre PNG, JPG, WebP y AVIF. Gratis, sin instalar nada." />
+  <meta property="og:image" content="https://descargar.pooldeza.com/static/img/og-descargar-pooldeza.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Panel de Downloader mostrando un video de YouTube listo para descargar" />
+  <meta property="og:locale" content="es_PE" />
+
+  <!-- Twitter / X Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Downloader — Descarga videos de YouTube, TikTok y más" />
+  <meta name="twitter:description" content="Descarga videos y audio en máxima calidad (hasta 4K), convierte a H.264 e imágenes entre PNG, JPG, WebP y AVIF." />
+  <meta name="twitter:image" content="https://descargar.pooldeza.com/static/img/og-descargar-pooldeza.png" />
 
   <!-- Favicon -->
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
 
-  <link rel="stylesheet" href="/static/css/styles.css?v=2.2.0" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=2.3.0" />
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@0.460.0"></script>
+
+  <!-- Datos estructurados (schema.org) para buscadores -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Downloader",
+    "url": "https://descargar.pooldeza.com/",
+    "description": "Descarga videos y audio de YouTube, TikTok, Kick y Twitch en máxima calidad. Convierte video a H.264 e imágenes entre PNG, JPG, WebP y AVIF.",
+    "applicationCategory": "MultimediaApplication",
+    "operatingSystem": "Any (funciona en el navegador)",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Descargar video de YouTube en hasta 4K",
+      "Descargar audio en MP3",
+      "Descargar videos de TikTok",
+      "Convertir video a H.264",
+      "Convertir imágenes entre PNG, JPG, WebP y AVIF",
+      "Conversión y descarga por lotes"
+    ],
+    "author": {
+      "@type": "Person",
+      "name": "Pool Anthony Deza Millones"
+    }
+  }
+  </script>
 </head>
 
 <body>
@@ -24,28 +74,25 @@
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="brand">
-        <div class="logo-icon"><i data-lucide="youtube"></i></div>
+        <img class="logo-icon" src="/static/favicon.ico" alt="Downloader" width="28" height="28" />
         <h2>Downloader</h2>
       </div>
 
       <nav class="nav-menu">
         <a href="#" class="nav-item active" data-view="downloaderView">
-          <span class="icon"><i data-lucide="video"></i></span> Video
+          <span class="icon"><i data-lucide="video"></i></span><span class="nav-label">Video</span>
         </a>
         <a href="#" class="nav-item" data-view="imageConverterView">
-          <span class="icon"><i data-lucide="image"></i></span> Imagen
+          <span class="icon"><i data-lucide="image"></i></span><span class="nav-label">Imagen</span>
         </a>
         <a href="#" class="nav-item" data-view="converterView">
-          <span class="icon"><i data-lucide="repeat"></i></span>
-          Convertir
+          <span class="icon"><i data-lucide="repeat"></i></span><span class="nav-label">Convertir</span>
         </a>
         <a href="#" class="nav-item" data-view="outpaintView">
-          <span class="icon"><i data-lucide="expand"></i></span>
-          IA Outpaint
+          <span class="icon"><i data-lucide="expand"></i></span><span class="nav-label">IA Outpaint</span>
         </a>
         <a href="#" class="nav-item" data-view="rembgView">
-          <span class="icon"><i data-lucide="scissors"></i></span>
-          Quitar Fondo
+          <span class="icon"><i data-lucide="scissors"></i></span><span class="nav-label">Quitar Fondo</span>
         </a>
       </nav>
       
@@ -66,6 +113,23 @@
       <header class="top-header">
         <h1>Panel de Descarga</h1>
       </header>
+
+      <p class="sr-only">
+        Downloader es una herramienta gratuita para descargar videos y audio de YouTube, TikTok, Kick y Twitch
+        en la máxima calidad disponible (hasta 4K), con opción de recortar el video antes de descargarlo.
+        También convierte videos a H.264 para máxima compatibilidad y convierte imágenes entre PNG, JPG, WebP y AVIF,
+        una por una o por lotes, todo desde el navegador sin instalar nada.
+      </p>
+
+      <div id="ffmpegBanner" class="ffmpeg-banner" style="display: none">
+        <i data-lucide="alert-triangle"></i>
+        <div class="ffmpeg-banner-text">
+          <strong>FFmpeg no encontrado.</strong>
+          Casi todos los videos de YouTube necesitan FFmpeg para unir video y audio en calidad alta — sin él, la descarga va a fallar.
+          <a href="https://www.gyan.dev/ffmpeg/builds/" target="_blank" rel="noopener">Instálalo aquí</a>
+          o ejecuta <code>winget install ffmpeg</code> y reinicia la app.
+        </div>
+      </div>
 
       <div id="downloaderView" class="content-card">
         <div class="card-header">
@@ -114,14 +178,17 @@
         </div>
 
         <div class="upload-zone" id="uploadZone" onclick="document.getElementById('videoFileInput').click()">
-          <input type="file" id="videoFileInput" accept=".mp4,.webm,.mkv,.avi,.mov" style="display: none" />
+          <input type="file" id="videoFileInput" accept=".mp4,.webm,.mkv,.avi,.mov" multiple style="display: none" />
           <div class="upload-content">
             <i data-lucide="upload-cloud" class="upload-icon"
               style="width: 48px; height: 48px; color: var(--accent-color); margin-bottom: 15px;"></i>
-            <h3 id="uploadTitle">Haz clic o arrastra un archivo aquí</h3>
-            <p id="uploadSubtitle">Formatos soportados: MP4, WEBM, MKV, AVI, MOV (Máx 500MB)</p>
+            <h3 id="uploadTitle">Haz clic o arrastra uno o más archivos aquí</h3>
+            <p id="uploadSubtitle">Formatos soportados: MP4, WEBM, MKV, AVI, MOV (Máx 500MB c/u) · puedes elegir varios a la vez</p>
           </div>
         </div>
+
+        <!-- Batch list (shown when 2+ videos are selected) -->
+        <ul id="videoBatchList" class="img-batch-list" style="display: none"></ul>
 
         <button class="download-btn disabled-btn" id="uploadConvertBtn" onclick="uploadAndConvert()">
           Selecciona un archivo primero
@@ -142,13 +209,43 @@
 
         <!-- Upload Zone (hidden after file selection) -->
         <div class="upload-zone" id="imgUploadZone" onclick="document.getElementById('imageFileInput').click()">
-          <input type="file" id="imageFileInput" accept=".png,.jpg,.jpeg,.webp,.avif,.bmp,.tiff,.tif" style="display: none" />
+          <input type="file" id="imageFileInput" accept=".png,.jpg,.jpeg,.webp,.avif,.bmp,.tiff,.tif" multiple style="display: none" />
           <div class="upload-content">
             <i data-lucide="image-plus" class="upload-icon"
               style="width: 48px; height: 48px; color: var(--accent-color); margin-bottom: 15px;"></i>
-            <h3 id="imgUploadTitle">Haz clic o arrastra una imagen aquí</h3>
-            <p id="imgUploadSubtitle">Formatos: PNG, JPG, WebP, AVIF, BMP, TIFF</p>
+            <h3 id="imgUploadTitle">Haz clic o arrastra una o más imágenes aquí</h3>
+            <p id="imgUploadSubtitle">Formatos: PNG, JPG, WebP, AVIF, BMP, TIFF · puedes elegir varias a la vez</p>
           </div>
+        </div>
+
+        <!-- Batch panel (shown when 2+ images are selected) -->
+        <div id="imgBatchPanel" style="display: none">
+          <ul id="imgBatchList" class="img-batch-list"></ul>
+
+          <div class="img-controls-grid">
+            <div class="input-group">
+              <label>Formato destino:</label>
+              <div class="format-buttons">
+                <button class="format-btn imgb-format-btn active" data-imgformat="webp">WebP</button>
+                <button class="format-btn imgb-format-btn" data-imgformat="jpg">JPG</button>
+                <button class="format-btn imgb-format-btn" data-imgformat="png">PNG</button>
+                <button class="format-btn imgb-format-btn" data-imgformat="avif">AVIF</button>
+              </div>
+            </div>
+
+            <div class="input-group" id="imgBatchQualityGroup">
+              <label>Calidad: <span id="imgBatchQualityValue">85</span>%</label>
+              <input type="range" id="imgBatchQualitySlider" min="10" max="100" value="85" class="quality-slider" />
+              <div class="quality-hints">
+                <span>Menor tamaño</span>
+                <span>Mayor calidad</span>
+              </div>
+            </div>
+          </div>
+
+          <button class="download-btn" id="imgBatchConvertBtn" onclick="convertImagesBatch()">
+            Convertir todas
+          </button>
         </div>
 
         <!-- Editor panel (shown after file selection) -->
@@ -523,6 +620,9 @@
     </div>
   </div>
 
+  <!-- Tareas en curso (descargas/conversiones): tarjetas flotantes, no bloquean el resto de la app -->
+  <div class="task-manager" id="taskManager"></div>
+
   <!-- Media Player Modal -->
   <div class="modal-overlay" id="mediaPlayerModal">
     <div class="modal player-modal">
@@ -539,9 +639,9 @@
   </div>
 
   <script>
-    window.APP_FEATURES = {"rembg":true,"outpaint":true};
+    window.APP_FEATURES = {"rembg":true,"outpaint":true,"ffmpeg":true};
   </script>
-  <script src="/static/js/app.js?v=2.2.0"></script>
+  <script src="/static/js/app.js?v=2.3.0"></script>
   <script>
     lucide.createIcons();
   </script>

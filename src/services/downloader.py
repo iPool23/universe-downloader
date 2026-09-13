@@ -549,7 +549,7 @@ class DownloaderService:
             elif d['status'] == 'error':
                 download_progress[unique_id].update({
                     'status': 'error',
-                    'error': str(d.get('error', 'Error desconocido'))
+                    'error': self._friendly_error(Exception(str(d.get('error', 'Error desconocido'))))
                 })
         
         # Seleccionar opciones según formato
@@ -687,11 +687,37 @@ class DownloaderService:
                 break
         
         # All retries exhausted
+        friendly_message = self._friendly_error(last_error)
         download_progress[unique_id].update({
             'status': 'error',
-            'error': str(last_error)
+            'error': friendly_message
         })
-        raise last_error
+        raise Exception(friendly_message)
+
+    def _friendly_error(self, exc: Exception) -> str:
+        """Traduce el error crudo de yt-dlp/ffmpeg a un mensaje que la persona pueda entender
+        y sobre el que pueda actuar, en vez del texto técnico interno (traceback, jerga de
+        yt-dlp). El caso de ffmpeg ausente es, de lejos, el más común: casi ningún video
+        moderno de YouTube trae video+audio en un solo archivo."""
+        error_str = str(exc).lower()
+
+        if not self.ffmpeg_path:
+            return (
+                "No se encontró FFmpeg en tu sistema. Es necesario para unir video y audio en "
+                "la mayoría de los videos de YouTube. Instálalo desde https://www.gyan.dev/ffmpeg/builds/ "
+                "o ejecuta 'winget install ffmpeg' (Windows), luego reinicia la app."
+            )
+        if 'format is not available' in error_str or 'requested format' in error_str:
+            return "No se encontró esa calidad para este video. Prueba con otra calidad."
+        if '403' in error_str or 'forbidden' in error_str:
+            return "YouTube bloqueó la descarga temporalmente. Espera un momento y vuelve a intentar."
+        if 'private' in error_str or 'unavailable' in error_str:
+            return "Este video es privado, fue eliminado o no está disponible en tu región."
+        if 'sign in' in error_str or 'age' in error_str and 'restrict' in error_str:
+            return "Este video requiere iniciar sesión o confirmar la edad; no se puede descargar sin eso."
+        if 'timed out' in error_str or 'timeout' in error_str:
+            return "La conexión tardó demasiado. Revisa tu internet e intenta de nuevo."
+        return "No se pudo completar la descarga. Intenta de nuevo o con otra calidad."
     
     def convert_to_h264(self, file_path: str, convert_id: str) -> Tuple[Path, str]:
         """

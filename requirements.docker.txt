@@ -1,0 +1,17 @@
+# Dependencias para el despliegue en servidor (Docker/Linux). Es un subconjunto de requirements.txt:
+# sin rembg/torch/diffusers (quitar fondo, IA outpaint) ni pystray/pyobjc (ícono de bandeja del
+# empaquetado de escritorio) — funciones que no aplican en un contenedor y que la propia app ya
+# desactiva sola si no encuentra esas librerías (ver src/config.py: ENABLE_REMBG/ENABLE_OUTPAINT).
+fastapi>=0.136.0
+uvicorn[standard]>=0.47.0
+pydantic>=2.13.0
+yt-dlp>=2026.3.17
+curl-cffi>=0.14.0,<0.15.0
+pybalt>=2025.7.1
+Pillow>=12.2.0
+python-multipart>=0.0.29
+ffmpeg-python>=0.2.0
+httpx>=0.28.0
+aiohttp>=3.13.0
+aiofiles>=25.1.0
+requests>=2.32.0
