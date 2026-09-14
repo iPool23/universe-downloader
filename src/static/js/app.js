@@ -267,7 +267,8 @@ async function scanVideo() {
     }
 
     scanBtn.disabled = true;
-    scanBtn.innerHTML = '<i data-lucide="search" style="width: 18px; color: white"></i> Escaneando...';
+    scanBtn.innerHTML = '<i data-lucide="loader-2" class="spin-anim" style="width: 18px; color: white"></i> Escaneando...';
+    lucide.createIcons();
     videoInfo.style.display = 'none';
 
     try {

@@ -327,11 +327,12 @@ class DownloaderService:
             path_obj = Path(self.ffmpeg_path)
             opts['ffmpeg_location'] = self.ffmpeg_path if path_obj.is_dir() else str(path_obj.parent)
         
-        # YouTube a veces bloquea al cliente 'web' por defecto con su verificación anti-bot
-        # ("Sign in to confirm you're not a bot"), algo muy común en IPs de servidores cloud.
-        # Reintentamos con otros player clients (igual que en download()) antes de rendirnos.
+        # YouTube bloquea al cliente 'web' (y sus variantes web_creator/mweb, todas parte de la
+        # misma familia) con su verificación anti-bot ("Sign in to confirm you're not a bot"),
+        # algo muy común en IPs de servidores cloud. Los clientes 'android'/'ios' usan una API
+        # distinta que no exige ese mismo desafío, así que los probamos antes de rendirnos.
         last_error: Optional[Exception] = None
-        for client in (None, 'web_creator', 'mweb'):
+        for client in (None, 'android', 'ios'):
             attempt_opts = dict(opts)
             if client:
                 attempt_opts['extractor_args'] = {'youtube': {'player_client': [client]}}
