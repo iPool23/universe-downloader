@@ -1167,12 +1167,45 @@ async function generatePreview() {
     }
 }
 
+function uploadWithProgress(url, formData, onProgress) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url);
+        xhr.responseType = 'blob';
+
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+                // La subida es solo una parte del trabajo: el resto (0-100 de esta fase)
+                // se completa mientras el servidor procesa la imagen, sin datos que subir.
+                onProgress(Math.round((e.loaded / e.total) * 100), 'uploading');
+            }
+        };
+        xhr.upload.onload = () => onProgress(100, 'processing');
+
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                resolve(xhr.response);
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => {
+                let message = 'Error de conversión';
+                try { message = JSON.parse(reader.result).detail || message; } catch { /* noop */ }
+                reject(new Error(message));
+            };
+            reader.onerror = () => reject(new Error('Error de conversión'));
+            reader.readAsText(xhr.response);
+        };
+        xhr.onerror = () => reject(new Error('Error de red'));
+        xhr.send(formData);
+    });
+}
+
 async function convertImage() {
     if (!selectedImageFile) return;
 
     const convertBtn = document.getElementById('imgConvertBtn');
     const originalText = convertBtn.textContent;
-    convertBtn.textContent = 'Convirtiendo...';
     convertBtn.classList.add('disabled-btn');
 
     const quality = document.getElementById('imgQualitySlider')?.value || 85;
@@ -1186,17 +1219,32 @@ async function convertImage() {
     const formData = new FormData();
     formData.append('file', selectedImageFile);
 
+    // El servidor no reporta avance de la conversión en sí (es una sola respuesta HTTP),
+    // así que tras terminar la subida simulamos un avance suave hasta 95% para que el
+    // usuario nunca vea un texto estático sin señal de cuánto falta.
+    let processingTimer = null;
+    const startProcessingAnimation = () => {
+        let fake = 0;
+        convertBtn.textContent = 'Procesando... 0%';
+        processingTimer = setInterval(() => {
+            fake = Math.min(fake + Math.random() * 8, 95);
+            convertBtn.textContent = `Procesando... ${Math.round(fake)}%`;
+        }, 200);
+    };
+    const stopProcessingAnimation = () => {
+        if (processingTimer) { clearInterval(processingTimer); processingTimer = null; }
+    };
+
     try {
-        const response = await fetch(`/api/convert-image?${queryParams}`, {
-            method: 'POST', body: formData
+        const blob = await uploadWithProgress(`/api/convert-image?${queryParams}`, formData, (percent, phase) => {
+            if (phase === 'uploading') {
+                convertBtn.textContent = `Subiendo... ${percent}%`;
+            } else if (phase === 'processing' && !processingTimer) {
+                startProcessingAnimation();
+            }
         });
+        stopProcessingAnimation();
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || 'Error de conversión');
-        }
-
-        const blob = await response.blob();
         const originalName = selectedImageFile.name.replace(/\.[^.]+$/, '');
         const fileName = `${originalName}.${selectedImgFormat}`;
 
@@ -1217,6 +1265,7 @@ async function convertImage() {
         setTimeout(() => { convertBtn.textContent = originalText; }, 4000);
 
     } catch (error) {
+        stopProcessingAnimation();
         showModal('error', 'x-circle', 'Error', error.message);
         convertBtn.textContent = originalText;
         convertBtn.classList.remove('disabled-btn');

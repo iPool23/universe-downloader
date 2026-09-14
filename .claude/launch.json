@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "universe-downloader",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "uvicorn", "src.app:app", "--host", "127.0.0.1", "--port", "8000", "--reload"],
+      "port": 8000
+    }
+  ]
+}

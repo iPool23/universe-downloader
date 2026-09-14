@@ -5,12 +5,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="author" content="Pool Anthony Deza Millones" />
-  <meta name="description" content="Descarga videos y audio de YouTube, TikTok, Kick y Twitch en máxima calidad (hasta 4K). Convierte videos a H.264 e imágenes entre PNG, JPG, WebP y AVIF, gratis y sin instalar nada." />
+  <meta name="description" content="Descarga videos y audio de YouTube, TikTok, Kick y Twitch en hasta 4K. Convierte a H.264 e imágenes a PNG, JPG, WebP y AVIF. Gratis, sin instalar nada." />
   <meta name="keywords" content="descargar youtube, descargar tiktok, downloader, convertidor de video, convertidor de imagen, mp3, mp4, h.264, webp" />
   <meta name="robots" content="index, follow" />
   <meta name="theme-color" content="#F9BB54" />
   <link rel="canonical" href="https://descargar.pooldeza.com/" />
-  <title>Downloader</title>
+  <title>Downloader — Descarga videos de YouTube y TikTok gratis</title>
 
   <!-- Open Graph / Facebook, WhatsApp, etc. -->
   <meta property="og:type" content="website" />
@@ -34,7 +34,7 @@
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
 
-  <link rel="stylesheet" href="/static/css/styles.css?v=2.3.0" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=2.3.1" />
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@0.460.0"></script>
 
@@ -74,7 +74,7 @@
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="brand">
-        <img class="logo-icon" src="/static/favicon.ico" alt="Downloader" width="28" height="28" />
+        <img class="logo-icon" src="/static/favicon.ico" alt="Downloader" title="Downloader" width="28" height="28" />
         <h2>Downloader</h2>
       </div>
 
@@ -259,7 +259,7 @@
                 <span id="imgOriginalInfo" class="img-info-badge"></span>
               </div>
               <div class="img-comparison-frame">
-                <img id="imgPreviewOriginal" alt="Original" />
+                <img id="imgPreviewOriginal" alt="Original" title="Imagen original antes de convertir" />
               </div>
             </div>
             <div class="img-comparison-divider">
@@ -271,7 +271,7 @@
                 <span id="imgResultInfo" class="img-info-badge"></span>
               </div>
               <div class="img-comparison-frame">
-                <img id="imgPreviewResult" alt="Resultado" style="display: none" />
+                <img id="imgPreviewResult" alt="Resultado" title="Imagen convertida" style="display: none" />
                 <div id="imgResultPlaceholder" class="img-result-placeholder">
                   <i data-lucide="image" style="width: 32px; height: 32px; opacity: 0.3;"></i>
                   <span>Ajusta los controles para previsualizar</span>
@@ -370,7 +370,7 @@
                 <span id="opOriginalInfo" class="img-info-badge"></span>
               </div>
               <div class="img-comparison-frame">
-                <img id="opPreviewOriginal" alt="Original" />
+                <img id="opPreviewOriginal" alt="Original" title="Imagen original antes de expandir" />
               </div>
             </div>
             <div class="img-comparison-divider">
@@ -382,7 +382,7 @@
                 <span id="opResultInfo" class="img-info-badge"></span>
               </div>
               <div class="img-comparison-frame">
-                <img id="opPreviewResult" alt="Resultado" style="display: none" />
+                <img id="opPreviewResult" alt="Resultado" title="Imagen expandida por IA" style="display: none" />
                 <div id="opResultPlaceholder" class="img-result-placeholder">
                   <i data-lucide="sparkles" style="width: 32px; height: 32px; opacity: 0.3;"></i>
                   <span>El resultado aparecerá aquí</span>
@@ -481,7 +481,7 @@
                 <span id="rbOriginalInfo" class="img-info-badge"></span>
               </div>
               <div class="img-comparison-frame">
-                <img id="rbPreviewOriginal" alt="Original" />
+                <img id="rbPreviewOriginal" alt="Original" title="Imagen original antes de quitar el fondo" />
               </div>
             </div>
 
@@ -500,7 +500,7 @@
                   <div class="op-spinner"></div>
                   <p id="rbLoaderText">Quitando fondo, por favor espera...</p>
                 </div>
-                <img id="rbPreviewResult" alt="Resultado" style="display: none;" />
+                <img id="rbPreviewResult" alt="Resultado" title="Imagen con el fondo eliminado" style="display: none;" />
               </div>
             </div>
           </div>
@@ -641,7 +641,7 @@
   <script>
     window.APP_FEATURES = {"rembg":true,"outpaint":true,"ffmpeg":true};
   </script>
-  <script src="/static/js/app.js?v=2.3.0"></script>
+  <script src="/static/js/app.js?v=2.3.1"></script>
   <script>
     lucide.createIcons();
   </script>
