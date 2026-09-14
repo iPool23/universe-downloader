@@ -327,23 +327,37 @@ class DownloaderService:
             path_obj = Path(self.ffmpeg_path)
             opts['ffmpeg_location'] = self.ffmpeg_path if path_obj.is_dir() else str(path_obj.parent)
         
+        # YouTube a veces bloquea al cliente 'web' por defecto con su verificación anti-bot
+        # ("Sign in to confirm you're not a bot"), algo muy común en IPs de servidores cloud.
+        # Reintentamos con otros player clients (igual que en download()) antes de rendirnos.
+        last_error: Optional[Exception] = None
+        for client in (None, 'web_creator', 'mweb'):
+            attempt_opts = dict(opts)
+            if client:
+                attempt_opts['extractor_args'] = {'youtube': {'player_client': [client]}}
+            try:
+                with yt_dlp.YoutubeDL(attempt_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+
+                    # Extraer calidades disponibles
+                    qualities = self._extract_qualities(info)
+
+                    # Obtener thumbnail
+                    thumbnail = self._get_thumbnail(info, url)
+
+                    return {
+                        'title': info.get('title'),
+                        'duration': info.get('duration'),
+                        'thumbnail': thumbnail,
+                        'webpage_url': info.get('webpage_url'),
+                        'qualities': qualities
+                    }
+            except Exception as e:
+                last_error = e
+                continue
+
         try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                
-                # Extraer calidades disponibles
-                qualities = self._extract_qualities(info)
-                
-                # Obtener thumbnail
-                thumbnail = self._get_thumbnail(info, url)
-                
-                return {
-                    'title': info.get('title'),
-                    'duration': info.get('duration'),
-                    'thumbnail': thumbnail,
-                    'webpage_url': info.get('webpage_url'),
-                    'qualities': qualities
-                }
+            raise last_error
         except Exception as e:
             # TikTok fallback: use oEmbed API for metadata
             if self._is_tiktok_url(url):
@@ -380,8 +394,8 @@ class DownloaderService:
                     'qualities': [{'value': 720, 'label': '720p (HD)'}],
                     '_tiktok_fallback': True  # Flag to indicate pybalt should be used
                 }
-            raise
-    
+            raise Exception(self._friendly_error(e))
+
     def _extract_qualities(self, info: Dict) -> list:
         """Extrae las calidades de video disponibles"""
         qualities = set()
@@ -713,7 +727,9 @@ class DownloaderService:
             return "YouTube bloqueó la descarga temporalmente. Espera un momento y vuelve a intentar."
         if 'private' in error_str or 'unavailable' in error_str:
             return "Este video es privado, fue eliminado o no está disponible en tu región."
-        if 'sign in' in error_str or 'age' in error_str and 'restrict' in error_str:
+        if 'not a bot' in error_str or 'confirm you' in error_str:
+            return "YouTube está verificando que el servidor no sea un bot y bloqueó esta solicitud. Espera unos minutos y vuelve a intentar."
+        if 'sign in' in error_str or ('age' in error_str and 'restrict' in error_str):
             return "Este video requiere iniciar sesión o confirmar la edad; no se puede descargar sin eso."
         if 'timed out' in error_str or 'timeout' in error_str:
             return "La conexión tardó demasiado. Revisa tu internet e intenta de nuevo."
