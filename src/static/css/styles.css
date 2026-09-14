@@ -116,7 +116,7 @@ body {
   flex-shrink: 0;
 }
 
-.brand h2 {
+.brand-name {
   font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.5px;
@@ -926,7 +926,7 @@ input:checked + .slider:before {
   color: white;
 }
 
-.modal-header h3 {
+.modal-header .modal-title-text {
   font-size: 16px;
   font-weight: 500;
 }
@@ -1506,7 +1506,7 @@ input:checked + .slider:before {
     flex-shrink: 0;
   }
 
-  .brand h2 {
+  .brand-name {
     display: none; /* el ícono solo ya identifica la app; el espacio horizontal es limitado */
   }
 

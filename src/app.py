@@ -13,7 +13,7 @@ import os
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -93,7 +93,7 @@ async def favicon():
     favicon_path = PUBLIC_DIR / "imgs" / "favicon.ico"
     if favicon_path.exists():
         return FileResponse(favicon_path)
-    return FileResponse(status_code=404)
+    raise HTTPException(status_code=404)
 
 
 @app.get("/", response_class=HTMLResponse)
