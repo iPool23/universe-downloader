@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple, Callable
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from src.config import DOWNLOAD_FOLDER, MAX_VIDEO_HEIGHT
+from src.config import DOWNLOAD_FOLDER, MAX_VIDEO_HEIGHT, YOUTUBE_COOKIES_FILE
 from src.utils import find_ffmpeg, sanitize_filename
 
 # Almacén global de progreso de descargas
@@ -82,7 +82,23 @@ class DownloaderService:
         
         # Ensure deno is on PATH (required by yt-dlp for YouTube n-challenge)
         self._setup_deno_path()
-    
+
+        self.cookies_file = YOUTUBE_COOKIES_FILE if YOUTUBE_COOKIES_FILE.exists() else None
+        if self.cookies_file:
+            print(f"YouTube cookies found at: {self.cookies_file}")
+
+    def _apply_cookies(self, opts: dict) -> dict:
+        """Agrega el cookiefile a las opciones de yt-dlp si hay uno configurado.
+
+        Sin esto, YouTube suele bloquear las IPs de servidores cloud con su
+        verificación "Sign in to confirm you're not a bot" sin importar qué
+        player client se use (ver _friendly_error) — cookies de una sesión
+        real es la única forma confiable de evitarlo.
+        """
+        if self.cookies_file:
+            opts['cookiefile'] = str(self.cookies_file)
+        return opts
+
     def _is_tiktok_url(self, url: str) -> bool:
         """Check if URL is a TikTok URL"""
         return 'tiktok.com' in url or 'vm.tiktok.com' in url
@@ -326,7 +342,9 @@ class DownloaderService:
         if self.ffmpeg_path:
             path_obj = Path(self.ffmpeg_path)
             opts['ffmpeg_location'] = self.ffmpeg_path if path_obj.is_dir() else str(path_obj.parent)
-        
+
+        self._apply_cookies(opts)
+
         # YouTube bloquea al cliente 'web' (y sus variantes web_creator/mweb, todas parte de la
         # misma familia) con su verificación anti-bot ("Sign in to confirm you're not a bot"),
         # algo muy común en IPs de servidores cloud. Los clientes 'android'/'ios' usan una API
@@ -576,7 +594,8 @@ class DownloaderService:
         # Agregar hook de progreso
         ydl_opts['progress_hooks'] = [progress_hook]
         ydl_opts['logger'] = ProgressLogger(unique_id)
-            
+        self._apply_cookies(ydl_opts)
+
         if start_time and end_time:
             start_sec = self._parse_time(start_time)
             end_sec = self._parse_time(end_time)
@@ -607,13 +626,15 @@ class DownloaderService:
                 })
                 time.sleep(wait_time)
                 
-                # On retry, try alternate player clients to bypass n-challenge issues
+                # On retry, try alternate player clients. android/ios usan una API distinta a la
+                # de 'web' (y sus variantes), que es la que YouTube castiga con su verificación
+                # anti-bot -- ver _apply_cookies() para la solución real cuando no hay cookies.
                 if attempt == 1:
-                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['web_creator']}}
-                    print("[RETRY] Switching to web_creator player client...")
+                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android']}}
+                    print("[RETRY] Switching to android player client...")
                 elif attempt == 2:
-                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['mweb']}}
-                    print("[RETRY] Switching to mweb player client...")
+                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['ios']}}
+                    print("[RETRY] Switching to ios player client...")
             
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:

@@ -2,6 +2,11 @@
 # downloads/ vive dentro del contenedor y se autolimpia sola (ver src/app.py). Puerto local 8200
 # para no chocar con Pagos (3101/4100), Mesa Digital (3001/4000), yabrio (3000) ni UCV-marcación.
 # Ubicación en el servidor: /opt/universe-downloader/compose.prod.yml
+#
+# cookies/youtube.txt (formato Netscape, exportado del navegador con sesión en YouTube) es
+# opcional y NUNCA vive en el repo: se coloca a mano en /opt/universe-downloader/cookies/ en el
+# servidor. Sin él, yt-dlp sigue funcionando pero YouTube puede bloquear la IP del servidor con
+# su verificación "Sign in to confirm you're not a bot" (ver src/services/downloader.py).
 name: universe-downloader
 
 services:
@@ -10,6 +15,8 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8200:8000"
+    volumes:
+      - ./cookies:/app/cookies:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 15s

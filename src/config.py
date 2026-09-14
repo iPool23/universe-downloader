@@ -58,6 +58,12 @@ FFMPEG_LOCATIONS = [
     os.path.expanduser(r'~\AppData\Local\Microsoft\WinGet\Links'),
 ]
 
+# Cookies de YouTube (opcional): permiten a yt-dlp autenticarse como una sesión real y evitar
+# el bloqueo anti-bot ("Sign in to confirm you're not a bot") que YouTube aplica a IPs de
+# servidores cloud. En producción se monta como volumen de solo lectura (ver compose.prod.yml);
+# en desarrollo local el archivo simplemente no existe y el código sigue funcionando sin cookies.
+YOUTUBE_COOKIES_FILE = Path(os.environ.get("YOUTUBE_COOKIES_FILE", str(BASE_DIR / "cookies" / "youtube.txt")))
+
 # Formatos soportados
 SUPPORTED_FORMATS = ['mp3', 'mp4']
 
