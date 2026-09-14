@@ -99,6 +99,19 @@ class DownloaderService:
             opts['cookiefile'] = str(self.cookies_file)
         return opts
 
+    def _apply_js_runtime(self, opts: dict) -> dict:
+        """Habilita Node.js como runtime de JavaScript para yt-dlp.
+
+        yt-dlp solo prueba 'deno' por defecto (ver --js-runtimes en su CLI); el 'node'
+        que instala el Dockerfile nunca se usaba porque nadie se lo indicaba, así que
+        YouTube devolvía únicamente miniaturas ("Only images are available") en vez de
+        los formatos de video/audio reales, sobre todo con el cliente 'web' (el único que
+        acepta cookies).
+        """
+        if shutil.which('node'):
+            opts['js_runtimes'] = {'node': {}}
+        return opts
+
     def _is_tiktok_url(self, url: str) -> bool:
         """Check if URL is a TikTok URL"""
         return 'tiktok.com' in url or 'vm.tiktok.com' in url
@@ -344,13 +357,14 @@ class DownloaderService:
             opts['ffmpeg_location'] = self.ffmpeg_path if path_obj.is_dir() else str(path_obj.parent)
 
         self._apply_cookies(opts)
+        self._apply_js_runtime(opts)
 
-        # YouTube bloquea al cliente 'web' (y sus variantes web_creator/mweb, todas parte de la
-        # misma familia) con su verificación anti-bot ("Sign in to confirm you're not a bot"),
-        # algo muy común en IPs de servidores cloud. Los clientes 'android'/'ios' usan una API
-        # distinta que no exige ese mismo desafío, así que los probamos antes de rendirnos.
+        # android/ios no admiten cookies (yt-dlp los descarta si hay cookiefile, cayendo
+        # siempre al cliente 'web'), así que solo tiene sentido probarlos sin cookies. Con
+        # cookies, 'web' ya debería bastar (era lo que fallaba antes por el bloqueo anti-bot).
         last_error: Optional[Exception] = None
-        for client in (None, 'android', 'ios'):
+        client_attempts = (None,) if self.cookies_file else (None, 'android', 'ios')
+        for client in client_attempts:
             attempt_opts = dict(opts)
             if client:
                 attempt_opts['extractor_args'] = {'youtube': {'player_client': [client]}}
@@ -595,6 +609,7 @@ class DownloaderService:
         ydl_opts['progress_hooks'] = [progress_hook]
         ydl_opts['logger'] = ProgressLogger(unique_id)
         self._apply_cookies(ydl_opts)
+        self._apply_js_runtime(ydl_opts)
 
         if start_time and end_time:
             start_sec = self._parse_time(start_time)
@@ -628,13 +643,15 @@ class DownloaderService:
                 
                 # On retry, try alternate player clients. android/ios usan una API distinta a la
                 # de 'web' (y sus variantes), que es la que YouTube castiga con su verificación
-                # anti-bot -- ver _apply_cookies() para la solución real cuando no hay cookies.
-                if attempt == 1:
-                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android']}}
-                    print("[RETRY] Switching to android player client...")
-                elif attempt == 2:
-                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['ios']}}
-                    print("[RETRY] Switching to ios player client...")
+                # anti-bot -- pero yt-dlp los ignora si hay cookiefile (no soportan cookies), así
+                # que con cookies no tiene sentido forzarlos.
+                if not self.cookies_file:
+                    if attempt == 1:
+                        ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android']}}
+                        print("[RETRY] Switching to android player client...")
+                    elif attempt == 2:
+                        ydl_opts['extractor_args'] = {'youtube': {'player_client': ['ios']}}
+                        print("[RETRY] Switching to ios player client...")
             
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
