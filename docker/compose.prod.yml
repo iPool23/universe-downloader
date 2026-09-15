@@ -44,7 +44,7 @@ services:
     profiles: [youtube-login]
     shm_size: 2gb
     ports:
-      - "127.0.0.1:7902:7900"
+      - "127.0.0.1:7903:7900"
     environment:
       SE_NODE_MAX_SESSIONS: "1"
       SE_NODE_OVERRIDE_MAX_SESSIONS: "false"
