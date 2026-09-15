@@ -64,6 +64,11 @@ FFMPEG_LOCATIONS = [
 # en desarrollo local el archivo simplemente no existe y el código sigue funcionando sin cookies.
 YOUTUBE_COOKIES_FILE = Path(os.environ.get("YOUTUBE_COOKIES_FILE", str(BASE_DIR / "cookies" / "youtube.txt")))
 
+# Perfil Chrome aislado y opcional, creado por el servicio temporal youtube-login. Se monta en
+# solo lectura en la app para que yt-dlp lea exclusivamente las cookies de youtube.com; nunca se
+# comparte el perfil de Chrome de la persona ni el navegador de otras automatizaciones.
+YOUTUBE_BROWSER_PROFILE = Path(os.environ["YOUTUBE_BROWSER_PROFILE"]) if os.environ.get("YOUTUBE_BROWSER_PROFILE") else None
+
 # Proxy de salida opcional, aplicado exclusivamente a URLs de YouTube. Permite sacar las
 # solicitudes por una IP distinta cuando YouTube bloquea el rango del proveedor cloud, sin
 # alterar TikTok, Instagram ni los demás extractores.

@@ -18,8 +18,11 @@ services:
     environment:
       # Opcional. Se aplica únicamente a YouTube cuando su rango de IP bloquea el VPS.
       - YOUTUBE_PROXY=${YOUTUBE_PROXY:-}
+      # Perfil dedicado de YouTube. La app solo puede leerlo, nunca modificarlo.
+      - YOUTUBE_BROWSER_PROFILE=/profiles/youtube
     volumes:
       - ./cookies:/app/cookies:ro
+      - youtube_browser_profile:/profiles/youtube:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 15s
@@ -34,9 +37,40 @@ services:
       options: { max-size: "20m", max-file: "5" }
     networks: [downloader]
 
+  # Se inicia solamente con `--profile youtube-login`, cuando haya que renovar la sesión.
+  # No comparte perfil con UCV ni con ningún navegador personal.
+  youtube-selenium:
+    image: selenium/standalone-chrome:4.48.0-20260905
+    profiles: [youtube-login]
+    shm_size: 2gb
+    ports:
+      - "127.0.0.1:7902:7900"
+    environment:
+      SE_NODE_MAX_SESSIONS: "1"
+      SE_NODE_OVERRIDE_MAX_SESSIONS: "false"
+      # El puerto solo existe en loopback del VPS y se accede por un túnel SSH local.
+      SE_VNC_NO_PASSWORD: "true"
+    volumes:
+      - youtube_browser_profile:/home/seluser/chrome-profile
+    networks: [downloader]
+
+  youtube-login:
+    image: ghcr.io/ipool23/universe-downloader:${IMAGE_TAG:-latest}
+    profiles: [youtube-login]
+    depends_on:
+      youtube-selenium:
+        condition: service_started
+    environment:
+      SELENIUM_URL: http://youtube-selenium:4444/wd/hub
+    command: ["python", "-m", "src.youtube_login"]
+    networks: [downloader]
+
 networks:
   downloader:
     driver: bridge
     ipam:
       config:
         - subnet: 172.31.0.0/16
+
+volumes:
+  youtube_browser_profile:

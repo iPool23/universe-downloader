@@ -11,7 +11,10 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple, Callable
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from src.config import DOWNLOAD_FOLDER, MAX_VIDEO_HEIGHT, YOUTUBE_COOKIES_FILE, YOUTUBE_PROXY
+from src.config import (
+    DOWNLOAD_FOLDER, MAX_VIDEO_HEIGHT, YOUTUBE_BROWSER_PROFILE, YOUTUBE_COOKIES_FILE,
+    YOUTUBE_PROXY,
+)
 from src.utils import find_ffmpeg, sanitize_filename
 
 # Almacén global de progreso de descargas
@@ -87,6 +90,14 @@ class DownloaderService:
         if self.cookies_file:
             print(f"YouTube cookies found at: {self.cookies_file}")
 
+        self.browser_profile = YOUTUBE_BROWSER_PROFILE
+        self.browser_cookies_available = bool(
+            self.browser_profile
+            and (self.browser_profile / "Default" / "Network" / "Cookies").is_file()
+        )
+        if self.browser_cookies_available:
+            print("Dedicated YouTube browser profile found")
+
     def _apply_cookies(self, opts: dict) -> dict:
         """Agrega el cookiefile a las opciones de yt-dlp si hay uno configurado.
 
@@ -97,6 +108,10 @@ class DownloaderService:
         """
         if self.cookies_file:
             opts['cookiefile'] = str(self.cookies_file)
+        elif self.browser_cookies_available:
+            # La tupla es la API pública de yt-dlp para --cookies-from-browser. El perfil es
+            # exclusivo de YouTube y está montado como solo lectura en este contenedor.
+            opts['cookiesfrombrowser'] = ('chrome', str(self.browser_profile), None, None)
         return opts
 
     def _apply_youtube_proxy(self, opts: dict, url: str) -> dict:
