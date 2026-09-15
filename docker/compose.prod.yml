@@ -15,6 +15,9 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8200:8000"
+    environment:
+      # Opcional. Se aplica únicamente a YouTube cuando su rango de IP bloquea el VPS.
+      - YOUTUBE_PROXY=${YOUTUBE_PROXY:-}
     volumes:
       - ./cookies:/app/cookies:ro
     healthcheck:

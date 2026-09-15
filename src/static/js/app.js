@@ -273,7 +273,18 @@ async function scanVideo() {
 
     try {
         const response = await fetch(`/api/scan?url=${encodeURIComponent(url)}`);
-        if (!response.ok) throw new Error('No se pudo obtener la información del video');
+        if (!response.ok) {
+            let message = 'No se pudo obtener la información del video';
+            try {
+                const errorData = await response.json();
+                if (typeof errorData.detail === 'string' && errorData.detail.trim()) {
+                    message = errorData.detail;
+                }
+            } catch (_) {
+                // Si el servidor no devuelve JSON, conservar el mensaje genérico.
+            }
+            throw new Error(message);
+        }
 
         const data = await response.json();
 

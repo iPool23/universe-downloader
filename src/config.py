@@ -64,6 +64,11 @@ FFMPEG_LOCATIONS = [
 # en desarrollo local el archivo simplemente no existe y el código sigue funcionando sin cookies.
 YOUTUBE_COOKIES_FILE = Path(os.environ.get("YOUTUBE_COOKIES_FILE", str(BASE_DIR / "cookies" / "youtube.txt")))
 
+# Proxy de salida opcional, aplicado exclusivamente a URLs de YouTube. Permite sacar las
+# solicitudes por una IP distinta cuando YouTube bloquea el rango del proveedor cloud, sin
+# alterar TikTok, Instagram ni los demás extractores.
+YOUTUBE_PROXY = os.environ.get("YOUTUBE_PROXY", "").strip() or None
+
 # Formatos soportados
 SUPPORTED_FORMATS = ['mp3', 'mp4']
 

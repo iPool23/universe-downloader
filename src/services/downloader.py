@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple, Callable
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from src.config import DOWNLOAD_FOLDER, MAX_VIDEO_HEIGHT, YOUTUBE_COOKIES_FILE
+from src.config import DOWNLOAD_FOLDER, MAX_VIDEO_HEIGHT, YOUTUBE_COOKIES_FILE, YOUTUBE_PROXY
 from src.utils import find_ffmpeg, sanitize_filename
 
 # Almacén global de progreso de descargas
@@ -97,6 +97,12 @@ class DownloaderService:
         """
         if self.cookies_file:
             opts['cookiefile'] = str(self.cookies_file)
+        return opts
+
+    def _apply_youtube_proxy(self, opts: dict, url: str) -> dict:
+        """Aplica el proxy configurado solo a YouTube; los demás sitios salen directo."""
+        if YOUTUBE_PROXY and ('youtube.com' in url or 'youtu.be' in url):
+            opts['proxy'] = YOUTUBE_PROXY
         return opts
 
     def _apply_js_runtime(self, opts: dict) -> dict:
@@ -357,6 +363,7 @@ class DownloaderService:
             opts['ffmpeg_location'] = self.ffmpeg_path if path_obj.is_dir() else str(path_obj.parent)
 
         self._apply_cookies(opts)
+        self._apply_youtube_proxy(opts, url)
         self._apply_js_runtime(opts)
 
         # android/ios no admiten cookies (yt-dlp los descarta si hay cookiefile, cayendo
@@ -609,6 +616,7 @@ class DownloaderService:
         ydl_opts['progress_hooks'] = [progress_hook]
         ydl_opts['logger'] = ProgressLogger(unique_id)
         self._apply_cookies(ydl_opts)
+        self._apply_youtube_proxy(ydl_opts, url)
         self._apply_js_runtime(ydl_opts)
 
         if start_time and end_time:
@@ -767,7 +775,11 @@ class DownloaderService:
         if 'private' in error_str or 'unavailable' in error_str:
             return "Este video es privado, fue eliminado o no está disponible en tu región."
         if 'not a bot' in error_str or 'confirm you' in error_str:
-            return "YouTube está verificando que el servidor no sea un bot y bloqueó esta solicitud. Espera unos minutos y vuelve a intentar."
+            return (
+                "YouTube bloqueó temporalmente la IP de este servidor. El administrador debe "
+                "configurar una sesión de YouTube o una salida proxy; volver a intentar desde "
+                "este mismo servidor no resolverá el bloqueo."
+            )
         if 'sign in' in error_str or ('age' in error_str and 'restrict' in error_str):
             return "Este video requiere iniciar sesión o confirmar la edad; no se puede descargar sin eso."
         if 'timed out' in error_str or 'timeout' in error_str:
