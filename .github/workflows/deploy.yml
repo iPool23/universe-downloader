@@ -78,16 +78,18 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Proxy opcional, solo para YouTube (ver src/services/downloader.py). Vacío = sin proxy.
+          YOUTUBE_PROXY: ${{ secrets.YOUTUBE_PROXY }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: IMAGE_TAG,GHCR_USER,GHCR_TOKEN
+          envs: IMAGE_TAG,GHCR_USER,GHCR_TOKEN,YOUTUBE_PROXY
           script: |
             set -euo pipefail
             mkdir -p /opt/universe-downloader
             cd /opt/universe-downloader
-            printf 'IMAGE_TAG=%s\n' "$IMAGE_TAG" > .env
+            printf 'IMAGE_TAG=%s\nYOUTUBE_PROXY=%s\n' "$IMAGE_TAG" "$YOUTUBE_PROXY" > .env
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             docker compose -f compose.prod.yml pull --quiet
             docker compose -f compose.prod.yml up -d --remove-orphans
