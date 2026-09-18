@@ -91,7 +91,7 @@ if (!ffmpegEnabled) {
 }
 
 const navItems = document.querySelectorAll('.nav-item');
-const allViews = ['downloaderView', 'imageConverterView', 'converterView'];
+const allViews = ['downloaderView', 'imageConverterView', 'converterView', 'audioExtractView'];
 
 if (outpaintEnabled) allViews.push('outpaintView');
 if (rembgEnabled) allViews.push('rembgView');
@@ -124,6 +124,17 @@ let selectedVideoBatch = [];
 
 // Initialize after page load
 document.addEventListener('DOMContentLoaded', () => {
+    // Pega el enlace y presiona Enter para escanear, sin necesidad de hacer clic en "Escanear"
+    const urlInput = document.getElementById('url');
+    if (urlInput) {
+        urlInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.keyCode === 13) {
+                e.preventDefault();
+                scanVideo();
+            }
+        });
+    }
+
     const uploadZone = document.getElementById('uploadZone');
     const fileInput = document.getElementById('videoFileInput');
 
@@ -157,6 +168,35 @@ document.addEventListener('DOMContentLoaded', () => {
         // Handle file input change
         fileInput.addEventListener('change', function () {
             handleFiles(this.files);
+        });
+    }
+
+    const audioUploadZone = document.getElementById('audioUploadZone');
+    const audioFileInput = document.getElementById('audioFileInput');
+
+    if (audioUploadZone && audioFileInput) {
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            audioUploadZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            }, false);
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            audioUploadZone.addEventListener(eventName, () => audioUploadZone.classList.add('dragover'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            audioUploadZone.addEventListener(eventName, () => audioUploadZone.classList.remove('dragover'), false);
+        });
+
+        audioUploadZone.addEventListener('drop', (e) => {
+            audioUploadZone.classList.remove('dragover');
+            handleAudioFiles(e.dataTransfer.files);
+        });
+
+        audioFileInput.addEventListener('change', function () {
+            handleAudioFiles(this.files);
         });
     }
 });
@@ -756,6 +796,218 @@ async function uploadAndConvertBatch() {
         okCount === total ? 'check-circle-2' : 'alert-circle',
         okCount === total ? '¡Completado!' : 'Terminado con errores',
         `${okCount} de ${total} videos se convirtieron y descargaron correctamente.`
+    );
+}
+
+// =====================================================
+// AUDIO EXTRACTION FUNCTIONS
+// =====================================================
+let selectedAudioFile = null;
+let selectedAudioBatch = [];
+
+function handleAudioFiles(files) {
+    if (files.length === 0) return;
+
+    const validExts = ['.mp4', '.mkv', '.avi', '.mov', '.webm'];
+    const valid = [];
+    for (const file of Array.from(files)) {
+        const filename = file.name.toLowerCase();
+        if (file.size > 500 * 1024 * 1024) {
+            showModal('error', 'alert-circle', 'Error', `${file.name} supera el límite de 500MB`);
+            continue;
+        }
+        if (!validExts.some(ext => filename.endsWith(ext))) {
+            showModal('error', 'alert-circle', 'Error', `${file.name}: formato no soportado. Usa MP4, MKV, AVI, MOV o WEBM.`);
+            continue;
+        }
+        valid.push(file);
+    }
+    if (valid.length === 0) return;
+
+    if (valid.length === 1) {
+        handleSingleAudioSelection(valid[0]);
+    } else {
+        handleAudioBatchSelection(valid);
+    }
+}
+
+function handleSingleAudioSelection(file) {
+    selectedAudioFile = file;
+    selectedAudioBatch = [];
+    document.getElementById('audioBatchList').style.display = 'none';
+
+    const title = document.getElementById('audioUploadTitle');
+    const subtitle = document.getElementById('audioUploadSubtitle');
+    const btn = document.getElementById('uploadExtractBtn');
+
+    title.innerHTML = `<i data-lucide="file-video" style="width: 24px; vertical-align: middle;"></i> ${file.name}`;
+    subtitle.innerHTML = `${(file.size / (1024 * 1024)).toFixed(1)} MB - Listo para extraer audio`;
+
+    btn.classList.remove('disabled-btn');
+    btn.innerText = 'Subir y Extraer Audio (MP3)';
+    btn.onclick = uploadAndExtractAudio;
+
+    lucide.createIcons();
+}
+
+function handleAudioBatchSelection(files) {
+    selectedAudioFile = null;
+    selectedAudioBatch = files;
+
+    const title = document.getElementById('audioUploadTitle');
+    const subtitle = document.getElementById('audioUploadSubtitle');
+    const btn = document.getElementById('uploadExtractBtn');
+    const list = document.getElementById('audioBatchList');
+
+    const totalMB = (files.reduce((sum, f) => sum + f.size, 0) / (1024 * 1024)).toFixed(1);
+    title.innerHTML = `<i data-lucide="files" style="width: 24px; vertical-align: middle;"></i> ${files.length} videos seleccionados`;
+    subtitle.innerHTML = `${totalMB} MB en total - se extraen uno por uno`;
+
+    list.style.display = 'flex';
+    list.innerHTML = files.map((file, i) => `
+        <li class="file-item" id="audioBatchItem${i}">
+            <div class="file-icon"><i data-lucide="file-video" style="width:18px;height:18px;"></i></div>
+            <div class="file-info">
+                <div class="file-name">${file.name}</div>
+                <div class="file-meta"><span>${(file.size / (1024 * 1024)).toFixed(1)} MB</span></div>
+            </div>
+            <span class="img-batch-status" id="audioBatchStatus${i}">Pendiente</span>
+        </li>`).join('');
+
+    btn.classList.remove('disabled-btn');
+    btn.innerText = `Extraer audio de todos (${files.length})`;
+    btn.onclick = uploadAndExtractAudioBatch;
+
+    lucide.createIcons();
+}
+
+function resetAudioUploadZone() {
+    selectedAudioFile = null;
+    selectedAudioBatch = [];
+    const title = document.getElementById('audioUploadTitle');
+    const subtitle = document.getElementById('audioUploadSubtitle');
+    const btn = document.getElementById('uploadExtractBtn');
+    const list = document.getElementById('audioBatchList');
+
+    title.innerHTML = 'Haz clic o arrastra uno o más videos aquí';
+    subtitle.innerHTML = 'Formatos soportados: MP4, WEBM, MKV, AVI, MOV (Máx 500MB c/u) · puedes elegir varios a la vez';
+
+    btn.classList.add('disabled-btn');
+    btn.innerText = 'Selecciona un archivo primero';
+    btn.onclick = uploadAndExtractAudio;
+    list.style.display = 'none';
+    list.innerHTML = '';
+    document.getElementById('audioFileInput').value = '';
+}
+
+async function uploadAndExtractAudio() {
+    if (!selectedAudioFile) return;
+    const file = selectedAudioFile;
+
+    const taskId = 'ea-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    createTaskCard(taskId, file.name, 'file-audio');
+    resetAudioUploadZone(); // libera el formulario ya: se puede subir otro archivo mientras este extrae
+
+    enqueueTask(taskId, () => runExtractAudioTask(taskId, file));
+}
+
+async function runExtractAudioTask(taskId, file) {
+    try {
+        updateTaskCard(taskId, { status: 'Subiendo video...' });
+        const result = await extractOneAudio(file, (progress) => {
+            const percent = Math.round(progress.percent || 0);
+            const status = progress.message || (progress.status === 'converting' ? `Extrayendo... ${percent}%` : 'Iniciando extracción...');
+            updateTaskCard(taskId, { percent, status });
+        });
+
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = `/api/extract-audio/download/${result.extractId}`;
+        a.download = result.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        updateTaskCard(taskId, { percent: 100, status: 'Audio extraído y descargado ✓', done: true });
+        removeTaskCard(taskId, 4000);
+    } catch (error) {
+        updateTaskCard(taskId, { status: error.message, error: true });
+        removeTaskCard(taskId, 6000);
+    }
+}
+
+/** Extrae el audio de un solo video ya subido — usado tanto por uploadAndExtractAudio (una tarjeta
+ * de tarea) como en bucle por uploadAndExtractAudioBatch (un archivo a la vez). */
+async function extractOneAudio(file, onProgress) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const startResponse = await fetch('/api/upload-extract-audio', { method: 'POST', body: formData });
+    if (!startResponse.ok) {
+        const error = await startResponse.json();
+        throw new Error(error.detail || 'Error en la subida y extracción');
+    }
+    const { extract_id } = await startResponse.json();
+
+    for (;;) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const progressResponse = await fetch(`/api/extract-audio/progress/${extract_id}`);
+        const progress = await progressResponse.json();
+        if (onProgress) onProgress(progress);
+
+        if (progress.status === 'completed') {
+            return { extractId: extract_id, filename: progress.filename || `${file.name.replace(/\.[^.]+$/, '')}.mp3` };
+        }
+        if (progress.status === 'error') {
+            throw new Error(progress.error || 'Error durante la extracción');
+        }
+    }
+}
+
+async function uploadAndExtractAudioBatch() {
+    if (selectedAudioBatch.length === 0) return;
+
+    const btn = document.getElementById('uploadExtractBtn');
+    btn.disabled = true;
+    const total = selectedAudioBatch.length;
+    let okCount = 0;
+
+    for (let i = 0; i < total; i++) {
+        const file = selectedAudioBatch[i];
+        const status = document.getElementById(`audioBatchStatus${i}`);
+        btn.innerText = `Extrayendo ${i + 1}/${total}...`;
+        if (status) { status.textContent = 'Extrayendo…'; status.className = 'img-batch-status'; }
+
+        try {
+            const result = await extractOneAudio(file, (progress) => {
+                if (status && progress.status === 'converting' && progress.percent) {
+                    status.textContent = `${Math.round(progress.percent)}%`;
+                }
+            });
+
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = `/api/extract-audio/download/${result.extractId}`;
+            a.download = result.filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            if (status) { status.textContent = 'Listo'; status.className = 'img-batch-status done'; }
+            okCount++;
+            await new Promise(resolve => setTimeout(resolve, 800));
+        } catch (error) {
+            if (status) { status.textContent = 'Error'; status.className = 'img-batch-status error'; }
+        }
+    }
+
+    btn.disabled = false;
+    btn.innerText = `Extraer audio de todos (${total})`;
+    showModal(
+        okCount === total ? 'success' : 'error',
+        okCount === total ? 'check-circle-2' : 'alert-circle',
+        okCount === total ? '¡Completado!' : 'Terminado con errores',
+        `${okCount} de ${total} audios se extrajeron y descargaron correctamente.`
     );
 }
 

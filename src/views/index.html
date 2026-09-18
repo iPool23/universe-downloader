@@ -35,7 +35,7 @@
   <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2" />
   <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=2" />
 
-  <link rel="stylesheet" href="/static/css/styles.css?v=2.3.2" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=2.3.3" />
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@0.460.0"></script>
 
@@ -59,6 +59,7 @@
       "Descargar audio en MP3",
       "Descargar videos de TikTok",
       "Convertir video a H.264",
+      "Extraer audio de un video a MP3",
       "Convertir imágenes entre PNG, JPG, WebP y AVIF",
       "Conversión y descarga por lotes"
     ],
@@ -88,6 +89,9 @@
         </a>
         <a href="#" class="nav-item" data-view="converterView">
           <span class="icon"><i data-lucide="repeat"></i></span><span class="nav-label">Convertir</span>
+        </a>
+        <a href="#" class="nav-item" data-view="audioExtractView">
+          <span class="icon"><i data-lucide="file-audio"></i></span><span class="nav-label">Extraer Audio</span>
         </a>
         <a href="#" class="nav-item" data-view="outpaintView">
           <span class="icon"><i data-lucide="expand"></i></span><span class="nav-label">IA Outpaint</span>
@@ -192,6 +196,31 @@
         <ul id="videoBatchList" class="img-batch-list" style="display: none"></ul>
 
         <button class="download-btn disabled-btn" id="uploadConvertBtn" onclick="uploadAndConvert()">
+          Selecciona un archivo primero
+        </button>
+      </div>
+
+      <!-- Audio Extraction View (Hidden by default) -->
+      <div id="audioExtractView" class="content-card" style="display: none">
+        <div class="card-header">
+          <h2>Extraer Audio</h2>
+          <p>Sube un video para extraer su audio en MP3</p>
+        </div>
+
+        <div class="upload-zone" id="audioUploadZone" onclick="document.getElementById('audioFileInput').click()">
+          <input type="file" id="audioFileInput" accept=".mp4,.webm,.mkv,.avi,.mov" multiple style="display: none" />
+          <div class="upload-content">
+            <i data-lucide="file-audio" class="upload-icon"
+              style="width: 48px; height: 48px; color: var(--accent-color); margin-bottom: 15px;"></i>
+            <h3 id="audioUploadTitle">Haz clic o arrastra uno o más videos aquí</h3>
+            <p id="audioUploadSubtitle">Formatos soportados: MP4, WEBM, MKV, AVI, MOV (Máx 500MB c/u) · puedes elegir varios a la vez</p>
+          </div>
+        </div>
+
+        <!-- Batch list (shown when 2+ videos are selected) -->
+        <ul id="audioBatchList" class="img-batch-list" style="display: none"></ul>
+
+        <button class="download-btn disabled-btn" id="uploadExtractBtn" onclick="uploadAndExtractAudio()">
           Selecciona un archivo primero
         </button>
       </div>
@@ -642,7 +671,7 @@
   <script>
     window.APP_FEATURES = {"rembg":true,"outpaint":true,"ffmpeg":true};
   </script>
-  <script src="/static/js/app.js?v=2.3.2"></script>
+  <script src="/static/js/app.js?v=2.3.3"></script>
   <script>
     lucide.createIcons();
   </script>

@@ -17,7 +17,7 @@ from pydantic import BaseModel
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.models import DownloadRequest, VideoInfo
 from src.services import DownloaderService
-from src.services.downloader import download_progress, downloads_to_cancel, conversion_progress
+from src.services.downloader import download_progress, downloads_to_cancel, conversion_progress, audio_extract_progress
 from src.config import DOWNLOADS_DIR, ENABLE_OUTPAINT, ENABLE_REMBG
 
 router = APIRouter(prefix="/api", tags=["download"])
@@ -367,6 +367,113 @@ async def get_conversion_file(convert_id: str):
         path=file_path,
         filename=result['output_name'],
         media_type='video/mp4'
+    )
+
+
+# =====================================================
+# AUDIO EXTRACTION ENDPOINTS
+# =====================================================
+
+# Almacén temporal de extracciones completadas
+audio_extract_results: dict = {}
+
+class ExtractAudioStartResponse(BaseModel):
+    extract_id: str
+    message: str
+
+def run_extract_audio_task(extract_id: str, file_path: str):
+    """Ejecuta la extracción de audio en segundo plano"""
+    try:
+        output_path, output_name = downloader.extract_audio(
+            file_path=file_path,
+            extract_id=extract_id
+        )
+        audio_extract_results[extract_id] = {
+            'input_path': str(file_path),
+            'output_path': str(output_path),
+            'output_name': output_name
+        }
+    except Exception as e:
+        audio_extract_progress[extract_id] = {
+            'status': 'error',
+            'percent': 0,
+            'error': str(e)
+        }
+
+@router.post("/upload-extract-audio", response_model=ExtractAudioStartResponse)
+async def upload_and_extract_audio(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    """
+    Sube un video e inicia la extracción de su audio a MP3 en segundo plano.
+    """
+    valid_extensions = {'.mp4', '.webm', '.mkv', '.avi', '.mov'}
+    ext = Path(file.filename).suffix.lower()
+
+    if ext not in valid_extensions:
+        raise HTTPException(status_code=400, detail="Formato de archivo no soportado")
+
+    extract_id = str(uuid.uuid4())[:8]
+
+    import re
+    safe_name = re.sub(r'[^\w\s-]', '', Path(file.filename).stem).strip()
+    save_filename = f"upload_{extract_id}_{safe_name}{ext}"
+    file_path = Path(DOWNLOADS_DIR) / save_filename
+
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error guardando archivo: {str(e)}")
+
+    audio_extract_progress[extract_id] = {
+        'status': 'starting',
+        'percent': 0,
+        'message': 'Iniciando extracción...'
+    }
+
+    background_tasks.add_task(run_extract_audio_task, extract_id, str(file_path))
+    return ExtractAudioStartResponse(extract_id=extract_id, message="Extracción iniciada")
+
+@router.get("/extract-audio/progress/{extract_id}")
+async def get_extract_audio_progress(extract_id: str):
+    """
+    Obtiene el progreso de una extracción de audio.
+    """
+    progress = audio_extract_progress.get(extract_id, {'status': 'unknown', 'percent': 0})
+    return progress
+
+@router.get("/extract-audio/download/{extract_id}")
+async def download_extracted_audio(extract_id: str):
+    """
+    Obtiene el archivo de audio extraído y luego se auto-destruyen
+    ambos archivos (video de entrada y audio de salida).
+    """
+    result = audio_extract_results.get(extract_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Extracción no encontrada")
+
+    output_path = Path(result['output_path'])
+    input_path = Path(result.get('input_path', ''))
+
+    if not output_path.exists():
+        raise HTTPException(status_code=404, detail="Archivo de audio no encontrado")
+
+    def cleanup_files():
+        try:
+            if input_path.exists():
+                input_path.unlink()
+        except Exception: pass
+        try:
+            if output_path.exists():
+                output_path.unlink()
+        except Exception: pass
+        audio_extract_progress.pop(extract_id, None)
+        audio_extract_results.pop(extract_id, None)
+
+    return FileResponse(
+        path=output_path,
+        filename=result['output_name'],
+        media_type='audio/mpeg',
+        background=BackgroundTask(cleanup_files)
     )
 
 

@@ -23,6 +23,9 @@ download_progress: Dict[str, Dict] = {}
 # Almacén global de progreso de conversiones
 conversion_progress: Dict[str, Dict] = {}
 
+# Almacén global de progreso de extracción de audio
+audio_extract_progress: Dict[str, Dict] = {}
+
 # Descargas marcadas para cancelar
 downloads_to_cancel: set = set()
 
@@ -911,6 +914,109 @@ class DownloaderService:
             
         except Exception as e:
             conversion_progress[convert_id].update({
+                'status': 'error',
+                'percent': 0,
+                'error': str(e)
+            })
+            raise
+
+    def extract_audio(self, file_path: str, extract_id: str) -> Tuple[Path, str]:
+        """
+        Extrae la pista de audio de un video como MP3 usando ffmpeg-python.
+        """
+        import ffmpeg
+        import time
+        import threading
+
+        input_path = Path(file_path)
+        if not input_path.exists():
+            raise Exception("Archivo no encontrado")
+
+        stem = input_path.stem
+        output_path = input_path.parent / f"{stem}.mp3"
+
+        if output_path.exists():
+            output_path.unlink()
+
+        audio_extract_progress[extract_id] = {
+            'status': 'starting',
+            'percent': 0,
+            'message': 'Iniciando extracción...'
+        }
+
+        try:
+            probe = ffmpeg.probe(str(input_path))
+            duration = float(probe['format']['duration'])
+            print(f"[EXTRACT-AUDIO] Duración del video: {duration}s")
+        except Exception as e:
+            print(f"[EXTRACT-AUDIO] No se pudo obtener duración: {e}")
+            duration = 60  # Asumir 60 segundos si no se puede obtener
+
+        try:
+            audio_extract_progress[extract_id].update({
+                'status': 'converting',
+                'percent': 5,
+                'message': 'Extrayendo audio...'
+            })
+
+            extract_error = [None]
+
+            def run_ffmpeg():
+                try:
+                    stream = ffmpeg.input(str(input_path))
+                    stream = ffmpeg.output(
+                        stream,
+                        str(output_path),
+                        vn=None,
+                        acodec='libmp3lame',
+                        audio_bitrate='192k'
+                    )
+                    ffmpeg.run(stream, overwrite_output=True, quiet=True)
+                except ffmpeg.Error as e:
+                    extract_error[0] = str(e.stderr.decode('utf-8', errors='ignore') if e.stderr else str(e))
+                except Exception as e:
+                    extract_error[0] = str(e)
+
+            ffmpeg_thread = threading.Thread(target=run_ffmpeg)
+            ffmpeg_thread.start()
+
+            start_time = time.time()
+            while ffmpeg_thread.is_alive():
+                time.sleep(0.5)
+                elapsed = time.time() - start_time
+
+                # El audio se extrae mucho más rápido que un re-encode de video completo.
+                estimated_time = max(duration * 0.3, 3)
+                percent = min(95, int((elapsed / estimated_time) * 100) + 5)
+
+                audio_extract_progress[extract_id].update({
+                    'status': 'converting',
+                    'percent': percent,
+                    'message': f'Extrayendo audio... {percent}%'
+                })
+
+            ffmpeg_thread.join()
+
+            if extract_error[0]:
+                raise Exception(f"Error de FFmpeg: {extract_error[0][:300]}")
+
+            if not output_path.exists():
+                raise Exception("No se pudo crear el archivo de audio")
+
+            filename = output_path.name
+
+            audio_extract_progress[extract_id].update({
+                'status': 'completed',
+                'percent': 100,
+                'message': 'Extracción completada',
+                'filename': filename
+            })
+
+            print(f"[EXTRACT-AUDIO] Extracción completada: {filename}")
+            return output_path, filename
+
+        except Exception as e:
+            audio_extract_progress[extract_id].update({
                 'status': 'error',
                 'percent': 0,
                 'error': str(e)
