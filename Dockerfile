@@ -14,7 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.docker.txt .
-RUN pip install --no-cache-dir -r requirements.docker.txt
+# --pre: permite que pip tome nightlies de yt-dlp (se publican en PyPI como pre-releases) cuando
+# son mas recientes que el ultimo stable -- YouTube rompe extractores seguido y el stable puede
+# tardar semanas en traer el fix; en cada build tomamos lo mas nuevo disponible, sea stable o nightly.
+RUN pip install --no-cache-dir --pre -r requirements.docker.txt
 
 COPY src ./src
 COPY public ./public
