@@ -12,7 +12,14 @@ Note: some docs under `docs/` (ARCHITECTURE.md, PROJECT_SUMMARY.md, README_DEV.m
 
 ## Branches: `desktop` is this app, `main` is the website
 
-The desktop app lives on the `desktop` branch. `main` on GitHub is a different product built from the same origins: the hosted web version (`descargar.pooldeza.com`), with Docker, a VPS deploy, SEO and server-only YouTube workarounds. Its `.github/workflows/deploy.yml` deploys to production on **every push to `main`**. Never push or merge desktop work into `main`, and do not assume the two branches share recent history: `desktop` branched off before the September 2026 web commits, so it lacks their features (for example the "extract audio" section) and `main` lacks the desktop shell and PDF compression. Releases of the desktop app are tagged on `desktop`.
+The desktop app lives on the `desktop` branch. `main` on GitHub is a different product built from the same origins: the hosted web version (`descargar.pooldeza.com`), with Docker, a VPS deploy, SEO and server-only YouTube workarounds. Its `.github/workflows/deploy.yml` deploys to production on **every push to `main`**. Never push or merge desktop work into `main`. Releases of the desktop app are tagged on `desktop`.
+
+Features flow one way, `main` → `desktop`: to bring new web work into the app, run `git merge origin/main` on `desktop` (first done on 2026-11-19, which brought the background task cards, batch processing and audio extraction). Resolve it by these rules:
+
+- **No cookies, proxy or browser-profile code** (see the download pipeline notes). Drop `YOUTUBE_COOKIES_FILE` / `YOUTUBE_BROWSER_PROFILE` / `YOUTUBE_PROXY` from `config.py` and `_apply_cookies` / `_apply_youtube_proxy` from `downloader.py`; keep the retries with the `android`/`ios` player clients, which need no account.
+- **Server-only files are deleted on `desktop`**: `Dockerfile`, `docker/`, `.dockerignore`, `requirements.docker.txt`, `.github/workflows/deploy.yml`, `.github/scripts/`, `src/youtube_login.py`, the SEO image under `src/static/img/`. In particular `deploy.yml` must not exist here.
+- **`views/index.html` and `static/css/styles.css` are not merged line by line** — the desktop versions are a different shell and design. Rebuild `index.html` from the web one (take its views, modals and `#taskManager`; wrap them in the desktop shell; add the PDF view, which only exists here; drop SEO markup and `<h2>` titles) and keep the desktop stylesheet, adding styles for any new class the web markup or `app.js` introduces.
+- `app.js`, `routes.py`, `app.py` merge normally; keep the desktop section at the end of `app.js` and the update endpoints at the end of `routes.py`.
 
 ## Common commands
 
@@ -97,7 +104,7 @@ Request flow: window (WebView2) → `static/js/app.js` (fetch calls) → `api/ro
 
 ### Frontend design
 
-`static/css/styles.css` uses MollyIA's design system (its `webui/app.css`): warm neutral tokens on `:root` with the dark set under `body.dark-mode`, system font, 248 px sidebar + panel, 34 px controls, pills, banners and modals — with Universe Downloader's amber (`--accent`) instead of MollyIA's blue. The theme follows the system until the user flips the switch (stored in `localStorage`, which persists because the window runs with `private_mode=False` and its own `storage_path`). `app.js` builds a lot of markup with fixed class names and ids (`.modal-title`, `.progress-fill`, `.video-details`, `.format-btn.active`, `.upload-zone.dragover`…): restyle those classes rather than renaming them. The top bar title comes from each menu entry's `data-title`.
+`static/css/styles.css` uses MollyIA's design system (its `webui/app.css`): warm neutral tokens on `:root` with the dark set under `body.dark-mode`, system font, 248 px sidebar + panel, 34 px controls, pills, banners and modals — with Universe Downloader's amber (`--accent`) instead of MollyIA's blue. The theme follows the system until the user flips the switch (stored in `localStorage`, which persists because the window runs with `private_mode=False` and its own `storage_path`). `app.js` builds a lot of markup with fixed class names and ids (`.modal-title`, `.progress-fill`, `.video-details`, `.format-btn.active`, `.upload-zone.dragover`, `.task-card…`, `.file-item`…): restyle those classes rather than renaming them. Downloads, H.264 conversion and audio extraction run as floating task cards in `#taskManager` (they do not block the window; several can queue); only PDF compression still uses the modal with a progress bar. The status pill in the top bar follows both. The top bar title comes from each menu entry's `data-title`.
 
 ### Optional/feature-gated AI features
 
@@ -122,5 +129,5 @@ Unlike rembg/outpaint, `pikepdf` is a lightweight, always-installed dependency (
 
 - `HOST` is `127.0.0.1`. The desktop window picks a free port at startup (`main._free_port()`); `PORT` (`8000`) is only used by the browser mode.
 - Two roots in `src/config.py`: `BASE_DIR` is read-only resources (the repo in development, PyInstaller's `_internal` in the installed app) and `DATA_DIR` is writable data (the repo in development; `%LOCALAPPDATA%\UniverseDownloader` when installed — `app.log`, `selftest.txt`, the window's `interfaz/` storage). Never write under `BASE_DIR` in the installed app: the installer deletes `_internal` on every update.
-- `DOWNLOAD_FOLDER` (`DATA_DIR/downloads/`) is created on import and used both for downloaded media and as scratch space for uploads (image conversion, outpainting, rembg, video-convert uploads) — those endpoints clean up their temp files via `BackgroundTask` callbacks after the response is sent.
+- `DOWNLOAD_FOLDER` (`DATA_DIR/downloads/`) is created on import and used both for downloaded media and as scratch space for uploads (image conversion, outpainting, rembg, video-convert uploads) — those endpoints clean up their temp files via `BackgroundTask` callbacks after the response is sent. `app.py` also sweeps files older than 2 hours every 30 minutes, but only in the installed app (`FROZEN`): in development that folder is the repo's `downloads/` and is left alone.
 - FFmpeg is searched in this order: system `PATH`, then `bin/` (Windows) or `mac/bin/` (macOS), then a few common install locations listed in `FFMPEG_LOCATIONS`.

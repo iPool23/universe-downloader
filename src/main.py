@@ -162,28 +162,6 @@ def _system_dark() -> bool:
         return False
 
 
-WORK_FILE_MAX_AGE_S = 24 * 3600
-
-
-def _clean_work_files():
-    """Borra las copias de trabajo de más de un día (solo en la app instalada).
-
-    Cada descarga deja una copia en la carpeta de trabajo hasta que el usuario la guarda con
-    «Guardar como»; sin esta limpieza se acumularían para siempre en AppData. En desarrollo no se
-    toca nada: ahí la carpeta es downloads/ del repo.
-    """
-    if not FROZEN:
-        return
-    from src.config import DOWNLOAD_FOLDER
-    limit = time.time() - WORK_FILE_MAX_AGE_S
-    for item in DOWNLOAD_FOLDER.iterdir():
-        try:
-            if item.is_file() and item.stat().st_mtime < limit:
-                item.unlink()
-        except OSError:
-            pass   # en uso o sin permiso: se intenta en el próximo arranque
-
-
 def run_window() -> int:
     """La app como ventana propia. Al cerrarla termina todo el proceso."""
     import webview
@@ -193,7 +171,6 @@ def run_window() -> int:
         if _already_running():
             return 0
 
-    _clean_work_files()
     port = _free_port()
     start_server(port)
 

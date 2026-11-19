@@ -13,7 +13,7 @@ import os
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -39,7 +39,7 @@ for logger_name in ['asyncio', 'uvicorn.error', 'uvicorn.access']:
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.api import router as api_router
-from src.config import DOWNLOADS_DIR, get_feature_flags
+from src.config import DOWNLOADS_DIR, FROZEN, get_feature_flags
 from src.version import APP_NAME, APP_VERSION
 
 # Rutas
@@ -64,13 +64,39 @@ app.mount("/content", StaticFiles(directory=DOWNLOADS_DIR), name="content")
 app.include_router(api_router)
 
 
+# Respaldo de limpieza: cada endpoint que entrega un archivo ya lo borra apenas se envía, pero una
+# descarga cancelada, una pestaña cerrada a medias o un error dejan el archivo huérfano en disco sin
+# nada que lo borre — sin este barrido se quedarían ahí para siempre y terminarían llenando el disco.
+DOWNLOAD_MAX_AGE_SECONDS = 2 * 60 * 60  # 2 horas: de sobra para cualquier descarga/conversión real
+CLEANUP_INTERVAL_SECONDS = 30 * 60
+
+
+def _cleanup_orphaned_downloads():
+    while True:
+        time.sleep(CLEANUP_INTERVAL_SECONDS)
+        try:
+            now = time.time()
+            for entry in Path(DOWNLOADS_DIR).iterdir():
+                if entry.name.startswith('.'):
+                    continue  # p. ej. .gitkeep: no es un archivo descargado, no se toca
+                if entry.is_file() and (now - entry.stat().st_mtime) > DOWNLOAD_MAX_AGE_SECONDS:
+                    entry.unlink()
+        except Exception:
+            pass
+
+
+# Solo en la app instalada: en desarrollo la carpeta de trabajo es downloads/ del repo y no se toca.
+if FROZEN:
+    threading.Thread(target=_cleanup_orphaned_downloads, daemon=True).start()
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     """Favicon"""
     favicon_path = PUBLIC_DIR / "imgs" / "favicon.ico"
     if favicon_path.exists():
         return FileResponse(favicon_path)
-    return FileResponse(status_code=404)
+    raise HTTPException(status_code=404)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -79,7 +105,7 @@ async def home():
     html_path = Path(__file__).parent / "views" / "index.html"
     html = html_path.read_text(encoding='utf-8')
     feature_flags = json.dumps(get_feature_flags(), ensure_ascii=False, separators=(",", ":"))
-    html = html.replace('{"rembg":true,"outpaint":true}', feature_flags)
+    html = html.replace('{"rembg":true,"outpaint":true,"ffmpeg":true}', feature_flags)
     # versión: la muestra la barra lateral y evita que la ventana use estilos o scripts de la versión anterior
     return html.replace('__APP_VERSION__', APP_VERSION)
 

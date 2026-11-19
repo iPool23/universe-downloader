@@ -1,3 +1,6 @@
+# Cookies de YouTube (auth personal — nunca se commitea)
+cookies/
+
 # Python
 __pycache__/
 *.py[cod]

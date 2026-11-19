@@ -31,6 +31,9 @@
         <a href="#" class="nav-item" data-view="converterView" data-title="Convertir a H.264">
           <i data-lucide="repeat"></i><span>Convertir a H.264</span>
         </a>
+        <a href="#" class="nav-item" data-view="audioExtractView" data-title="Extraer audio">
+          <i data-lucide="file-audio"></i><span>Extraer audio</span>
+        </a>
 
         <div class="nav-group">Imagen</div>
         <a href="#" class="nav-item" data-view="imageConverterView" data-title="Convertir imagen">
@@ -71,7 +74,14 @@
         <span class="pill ready" id="statusPill"><span class="pill-dot"></span><span id="statusText">Listo</span></span>
       </header>
 
-      <div class="banners" id="banners"></div>
+      <div class="banners" id="banners">
+        <div id="ffmpegBanner" class="banner warn" style="display: none">
+          <i data-lucide="alert-triangle"></i>
+          <span><b>No se encontró FFmpeg.</b> Hace falta para unir video y audio en casi todos los videos:
+            sin él, la descarga va a fallar. Reinstala Universe Downloader o ejecuta
+            <code>winget install ffmpeg</code> y vuelve a abrir la app.</span>
+        </div>
+      </div>
 
       <div class="scroller">
         <div class="page">
@@ -120,16 +130,43 @@
             </div>
 
             <div class="upload-zone" id="uploadZone" onclick="document.getElementById('videoFileInput').click()">
-              <input type="file" id="videoFileInput" accept=".mp4,.webm,.mkv,.avi,.mov" style="display: none" />
+              <input type="file" id="videoFileInput" accept=".mp4,.webm,.mkv,.avi,.mov" multiple style="display: none" />
               <div class="upload-content">
                 <i data-lucide="upload-cloud" class="upload-icon"
                   style="width: 48px; height: 48px; color: var(--accent); margin-bottom: 15px;"></i>
-                <h3 id="uploadTitle">Haz clic o arrastra un archivo aquí</h3>
-                <p id="uploadSubtitle">Formatos soportados: MP4, WEBM, MKV, AVI, MOV (Máx 500MB)</p>
+                <h3 id="uploadTitle">Haz clic o arrastra uno o más archivos aquí</h3>
+                <p id="uploadSubtitle">Formatos soportados: MP4, WEBM, MKV, AVI, MOV (Máx 500MB c/u) · puedes elegir varios a la vez</p>
               </div>
             </div>
 
+            <!-- Batch list (shown when 2+ videos are selected) -->
+            <ul id="videoBatchList" class="img-batch-list" style="display: none"></ul>
+
             <button class="download-btn disabled-btn" id="uploadConvertBtn" onclick="uploadAndConvert()">
+              Selecciona un archivo primero
+            </button>
+          </div>
+
+          <!-- Audio Extraction View (Hidden by default) -->
+          <div id="audioExtractView" class="content-card" style="display: none">
+            <div class="card-header">
+              <p>Sube un video para extraer su audio en MP3</p>
+            </div>
+
+            <div class="upload-zone" id="audioUploadZone" onclick="document.getElementById('audioFileInput').click()">
+              <input type="file" id="audioFileInput" accept=".mp4,.webm,.mkv,.avi,.mov" multiple style="display: none" />
+              <div class="upload-content">
+                <i data-lucide="file-audio" class="upload-icon"
+                  style="width: 48px; height: 48px; color: var(--accent); margin-bottom: 15px;"></i>
+                <h3 id="audioUploadTitle">Haz clic o arrastra uno o más videos aquí</h3>
+                <p id="audioUploadSubtitle">Formatos soportados: MP4, WEBM, MKV, AVI, MOV (Máx 500MB c/u) · puedes elegir varios a la vez</p>
+              </div>
+            </div>
+
+            <!-- Batch list (shown when 2+ videos are selected) -->
+            <ul id="audioBatchList" class="img-batch-list" style="display: none"></ul>
+
+            <button class="download-btn disabled-btn" id="uploadExtractBtn" onclick="uploadAndExtractAudio()">
               Selecciona un archivo primero
             </button>
           </div>
@@ -210,13 +247,43 @@
 
             <!-- Upload Zone (hidden after file selection) -->
             <div class="upload-zone" id="imgUploadZone" onclick="document.getElementById('imageFileInput').click()">
-              <input type="file" id="imageFileInput" accept=".png,.jpg,.jpeg,.webp,.avif,.bmp,.tiff,.tif" style="display: none" />
+              <input type="file" id="imageFileInput" accept=".png,.jpg,.jpeg,.webp,.avif,.bmp,.tiff,.tif" multiple style="display: none" />
               <div class="upload-content">
                 <i data-lucide="image-plus" class="upload-icon"
                   style="width: 48px; height: 48px; color: var(--accent); margin-bottom: 15px;"></i>
-                <h3 id="imgUploadTitle">Haz clic o arrastra una imagen aquí</h3>
-                <p id="imgUploadSubtitle">Formatos: PNG, JPG, WebP, AVIF, BMP, TIFF</p>
+                <h3 id="imgUploadTitle">Haz clic o arrastra una o más imágenes aquí</h3>
+                <p id="imgUploadSubtitle">Formatos: PNG, JPG, WebP, AVIF, BMP, TIFF · puedes elegir varias a la vez</p>
               </div>
+            </div>
+
+            <!-- Batch panel (shown when 2+ images are selected) -->
+            <div id="imgBatchPanel" style="display: none">
+              <ul id="imgBatchList" class="img-batch-list"></ul>
+
+              <div class="img-controls-grid">
+                <div class="input-group">
+                  <label>Formato destino:</label>
+                  <div class="format-buttons">
+                    <button class="format-btn imgb-format-btn active" data-imgformat="webp">WebP</button>
+                    <button class="format-btn imgb-format-btn" data-imgformat="jpg">JPG</button>
+                    <button class="format-btn imgb-format-btn" data-imgformat="png">PNG</button>
+                    <button class="format-btn imgb-format-btn" data-imgformat="avif">AVIF</button>
+                  </div>
+                </div>
+
+                <div class="input-group" id="imgBatchQualityGroup">
+                  <label>Calidad: <span id="imgBatchQualityValue">85</span>%</label>
+                  <input type="range" id="imgBatchQualitySlider" min="10" max="100" value="85" class="quality-slider" />
+                  <div class="quality-hints">
+                    <span>Menor tamaño</span>
+                    <span>Mayor calidad</span>
+                  </div>
+                </div>
+              </div>
+
+              <button class="download-btn" id="imgBatchConvertBtn" onclick="convertImagesBatch()">
+                Convertir todas
+              </button>
             </div>
 
             <!-- Editor panel (shown after file selection) -->
@@ -230,7 +297,7 @@
                     <span id="imgOriginalInfo" class="img-info-badge"></span>
                   </div>
                   <div class="img-comparison-frame">
-                    <img id="imgPreviewOriginal" alt="Original" />
+                    <img id="imgPreviewOriginal" alt="Original" title="Imagen original antes de convertir" />
                   </div>
                 </div>
                 <div class="img-comparison-divider">
@@ -242,7 +309,7 @@
                     <span id="imgResultInfo" class="img-info-badge"></span>
                   </div>
                   <div class="img-comparison-frame">
-                    <img id="imgPreviewResult" alt="Resultado" style="display: none" />
+                    <img id="imgPreviewResult" alt="Resultado" title="Imagen convertida" style="display: none" />
                     <div id="imgResultPlaceholder" class="img-result-placeholder">
                       <i data-lucide="image" style="width: 32px; height: 32px; opacity: 0.3;"></i>
                       <span>Ajusta los controles para previsualizar</span>
@@ -340,7 +407,7 @@
                     <span id="opOriginalInfo" class="img-info-badge"></span>
                   </div>
                   <div class="img-comparison-frame">
-                    <img id="opPreviewOriginal" alt="Original" />
+                    <img id="opPreviewOriginal" alt="Original" title="Imagen original antes de expandir" />
                   </div>
                 </div>
                 <div class="img-comparison-divider">
@@ -352,7 +419,7 @@
                     <span id="opResultInfo" class="img-info-badge"></span>
                   </div>
                   <div class="img-comparison-frame">
-                    <img id="opPreviewResult" alt="Resultado" style="display: none" />
+                    <img id="opPreviewResult" alt="Resultado" title="Imagen expandida por IA" style="display: none" />
                     <div id="opResultPlaceholder" class="img-result-placeholder">
                       <i data-lucide="sparkles" style="width: 32px; height: 32px; opacity: 0.3;"></i>
                       <span>El resultado aparecerá aquí</span>
@@ -450,7 +517,7 @@
                     <span id="rbOriginalInfo" class="img-info-badge"></span>
                   </div>
                   <div class="img-comparison-frame">
-                    <img id="rbPreviewOriginal" alt="Original" />
+                    <img id="rbPreviewOriginal" alt="Original" title="Imagen original antes de quitar el fondo" />
                   </div>
                 </div>
 
@@ -469,7 +536,7 @@
                       <div class="op-spinner"></div>
                       <p id="rbLoaderText">Quitando fondo, por favor espera...</p>
                     </div>
-                    <img id="rbPreviewResult" alt="Resultado" style="display: none;" />
+                    <img id="rbPreviewResult" alt="Resultado" title="Imagen con el fondo eliminado" style="display: none;" />
                   </div>
                 </div>
               </div>
@@ -590,11 +657,14 @@
     </div>
   </div>
 
+  <!-- Tareas en curso (descargas/conversiones): tarjetas flotantes, no bloquean el resto de la app -->
+  <div class="task-manager" id="taskManager"></div>
+
   <!-- Media Player Modal -->
   <div class="modal-overlay" id="mediaPlayerModal">
     <div class="modal player-modal">
       <div class="modal-header">
-        <h3 id="playerTitle">Reproduciendo...</h3>
+        <p id="playerTitle" class="modal-title-text">Reproduciendo...</p>
         <button class="close-btn" onclick="closePlayer()">
           <i data-lucide="x"></i>
         </button>
@@ -606,7 +676,7 @@
   </div>
 
   <script>
-    window.APP_FEATURES = {"rembg":true,"outpaint":true};
+    window.APP_FEATURES = {"rembg":true,"outpaint":true,"ffmpeg":true};
     window.APP_INFO = {"version":"__APP_VERSION__"};
   </script>
   <script src="/static/js/app.js?v=__APP_VERSION__"></script>

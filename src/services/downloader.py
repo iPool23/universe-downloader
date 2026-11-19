@@ -20,34 +20,52 @@ download_progress: Dict[str, Dict] = {}
 # Almacén global de progreso de conversiones
 conversion_progress: Dict[str, Dict] = {}
 
+# Almacén global de progreso de extracción de audio
+audio_extract_progress: Dict[str, Dict] = {}
+
 # Descargas marcadas para cancelar
 downloads_to_cancel: set = set()
 
 
-def friendly_error(error) -> str:
-    """Traduce los errores más comunes de yt-dlp a algo que se entienda sin contexto.
+class FriendlyError(Exception):
+    """Error cuyo mensaje ya está redactado para la persona: no se vuelve a traducir."""
 
-    La app no usa cookies ni cuentas: si el sitio exige iniciar sesión, la descarga
-    simplemente no está disponible desde esta conexión.
+
+def friendly_error(error, ffmpeg_missing: bool = False) -> str:
+    """Traduce los errores de yt-dlp/FFmpeg a algo que se entienda y sobre lo que se pueda actuar.
+
+    La app no usa cookies ni cuentas: si el sitio exige iniciar sesión, la descarga simplemente
+    no está disponible desde esta conexión.
     """
+    if isinstance(error, FriendlyError):
+        return str(error)
     msg = str(error or "").strip()
     low = msg.lower()
-    if "sign in to confirm" in low or "login_required" in low or "use --cookies" in low:
+    if ffmpeg_missing:
+        return ("No se encontró FFmpeg. Es necesario para unir video y audio en la mayoría de los "
+                "videos. Reinstala Universe Downloader o instala FFmpeg (winget install ffmpeg).")
+    if "sign in to confirm" in low or "not a bot" in low or "login_required" in low or "use --cookies" in low:
         return ("YouTube está pidiendo iniciar sesión para este video desde tu conexión, "
                 "así que ahora no se puede descargar. Prueba más tarde o desde otra red.")
+    if "sign in" in low or ("age" in low and "restrict" in low):
+        return "Este video requiere iniciar sesión o confirmar la edad: no se puede descargar."
+    if "format is not available" in low or "requested format" in low:
+        return "No se encontró esa calidad para este video. Prueba con otra calidad."
+    if "403" in low or "forbidden" in low:
+        return "El sitio bloqueó la descarga temporalmente. Espera un momento y vuelve a intentar."
     if "private video" in low:
         return "El video es privado: no se puede descargar."
-    if "video unavailable" in low or "this video is not available" in low:
+    if "video unavailable" in low or "this video is not available" in low or "unavailable" in low:
         return "El video no está disponible (fue eliminado o está bloqueado en tu región)."
     if "unsupported url" in low:
         return "Ese enlace no es de un sitio compatible."
-    if "getaddrinfo failed" in low or "failed to resolve" in low or "timed out" in low:
-        return "No hay conexión con el sitio. Revisa tu internet e inténtalo otra vez."
+    if "getaddrinfo failed" in low or "failed to resolve" in low or "timed out" in low or "timeout" in low:
+        return "No hay conexión con el sitio o tardó demasiado. Revisa tu internet e inténtalo otra vez."
     # sin los prefijos repetidos de yt-dlp ("ERROR: ERROR: [youtube] id: …")
     while low.startswith("error:"):
         msg = msg[6:].strip()
         low = msg.lower()
-    return msg or "Error desconocido"
+    return f"No se pudo completar la descarga. Detalle: {msg}" if msg else "No se pudo completar la descarga."
 
 
 class ProgressLogger:
@@ -110,7 +128,7 @@ class DownloaderService:
         # yt-dlp solo habilita deno por defecto: cualquier otro hay que declararlo.
         self.js_runtimes: Dict[str, Dict] = {}
         self._setup_deno_path()
-    
+
     def _is_tiktok_url(self, url: str) -> bool:
         """Check if URL is a TikTok URL"""
         return 'tiktok.com' in url or 'vm.tiktok.com' in url
@@ -364,24 +382,38 @@ class DownloaderService:
             path_obj = Path(self.ffmpeg_path)
             opts['ffmpeg_location'] = self.ffmpeg_path if path_obj.is_dir() else str(path_obj.parent)
 
-        
+
+        # Sin cuentas ni cookies: si el cliente web de YouTube exige verificación, se prueba con los
+        # clientes android e ios, que usan otra API. Para los demás sitios basta un intento.
+        last_error: Optional[Exception] = None
+        is_youtube = 'youtube.com' in url or 'youtu.be' in url
+        for client in ((None, 'android', 'ios') if is_youtube else (None,)):
+            attempt_opts = dict(opts)
+            if client:
+                attempt_opts['extractor_args'] = {'youtube': {'player_client': [client]}}
+            try:
+                with yt_dlp.YoutubeDL(attempt_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+
+                    # Extraer calidades disponibles
+                    qualities = self._extract_qualities(info)
+
+                    # Obtener thumbnail
+                    thumbnail = self._get_thumbnail(info, url)
+
+                    return {
+                        'title': info.get('title'),
+                        'duration': info.get('duration'),
+                        'thumbnail': thumbnail,
+                        'webpage_url': info.get('webpage_url'),
+                        'qualities': qualities
+                    }
+            except Exception as e:
+                last_error = e
+                continue
+
         try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                
-                # Extraer calidades disponibles
-                qualities = self._extract_qualities(info)
-                
-                # Obtener thumbnail
-                thumbnail = self._get_thumbnail(info, url)
-                
-                return {
-                    'title': info.get('title'),
-                    'duration': info.get('duration'),
-                    'thumbnail': thumbnail,
-                    'webpage_url': info.get('webpage_url'),
-                    'qualities': qualities
-                }
+            raise last_error
         except Exception as e:
             # TikTok fallback: use oEmbed API for metadata
             if self._is_tiktok_url(url):
@@ -418,8 +450,8 @@ class DownloaderService:
                     'qualities': [{'value': 720, 'label': '720p (HD)'}],
                     '_tiktok_fallback': True  # Flag to indicate pybalt should be used
                 }
-            raise
-    
+            raise FriendlyError(self._friendly_error(e))
+
     def _extract_qualities(self, info: Dict) -> list:
         """Extrae las calidades de video disponibles"""
         qualities = set()
@@ -585,7 +617,7 @@ class DownloaderService:
             elif d['status'] == 'error':
                 download_progress[unique_id].update({
                     'status': 'error',
-                    'error': str(d.get('error', 'Error desconocido'))
+                    'error': self._friendly_error(Exception(str(d.get('error', 'Error desconocido'))))
                 })
         
         # Seleccionar opciones según formato
@@ -597,7 +629,7 @@ class DownloaderService:
         # Agregar hook de progreso
         ydl_opts['progress_hooks'] = [progress_hook]
         ydl_opts['logger'] = ProgressLogger(unique_id)
-            
+
         if start_time and end_time:
             start_sec = self._parse_time(start_time)
             end_sec = self._parse_time(end_time)
@@ -628,14 +660,15 @@ class DownloaderService:
                 })
                 time.sleep(wait_time)
                 
-                # On retry, try alternate player clients to bypass n-challenge issues
+                # En los reintentos se prueban los clientes android e ios, que usan una API distinta a
+                # la de 'web' (la que YouTube castiga con su verificación anti-bot).
                 if attempt == 1:
-                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['web_creator']}}
-                    print("[RETRY] Switching to web_creator player client...")
+                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android']}}
+                    print("[RETRY] Switching to android player client...")
                 elif attempt == 2:
-                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['mweb']}}
-                    print("[RETRY] Switching to mweb player client...")
-            
+                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['ios']}}
+                    print("[RETRY] Switching to ios player client...")
+
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=True)
@@ -723,12 +756,17 @@ class DownloaderService:
                 break
         
         # All retries exhausted
+        friendly_message = self._friendly_error(last_error)
         download_progress[unique_id].update({
             'status': 'error',
-            'error': str(last_error)
+            'error': friendly_message
         })
-        raise last_error
-    
+        raise FriendlyError(friendly_message)
+
+    def _friendly_error(self, exc: Exception) -> str:
+        """Mensaje entendible para la persona (ver friendly_error)."""
+        return friendly_error(exc, ffmpeg_missing=not self.ffmpeg_path)
+
     def convert_to_h264(self, file_path: str, convert_id: str) -> Tuple[Path, str]:
         """
         Convierte un video a H.264 usando ffmpeg-python.
@@ -839,6 +877,109 @@ class DownloaderService:
             
         except Exception as e:
             conversion_progress[convert_id].update({
+                'status': 'error',
+                'percent': 0,
+                'error': str(e)
+            })
+            raise
+
+    def extract_audio(self, file_path: str, extract_id: str) -> Tuple[Path, str]:
+        """
+        Extrae la pista de audio de un video como MP3 usando ffmpeg-python.
+        """
+        import ffmpeg
+        import time
+        import threading
+
+        input_path = Path(file_path)
+        if not input_path.exists():
+            raise Exception("Archivo no encontrado")
+
+        stem = input_path.stem
+        output_path = input_path.parent / f"{stem}.mp3"
+
+        if output_path.exists():
+            output_path.unlink()
+
+        audio_extract_progress[extract_id] = {
+            'status': 'starting',
+            'percent': 0,
+            'message': 'Iniciando extracción...'
+        }
+
+        try:
+            probe = ffmpeg.probe(str(input_path))
+            duration = float(probe['format']['duration'])
+            print(f"[EXTRACT-AUDIO] Duración del video: {duration}s")
+        except Exception as e:
+            print(f"[EXTRACT-AUDIO] No se pudo obtener duración: {e}")
+            duration = 60  # Asumir 60 segundos si no se puede obtener
+
+        try:
+            audio_extract_progress[extract_id].update({
+                'status': 'converting',
+                'percent': 5,
+                'message': 'Extrayendo audio...'
+            })
+
+            extract_error = [None]
+
+            def run_ffmpeg():
+                try:
+                    stream = ffmpeg.input(str(input_path))
+                    stream = ffmpeg.output(
+                        stream,
+                        str(output_path),
+                        vn=None,
+                        acodec='libmp3lame',
+                        audio_bitrate='192k'
+                    )
+                    ffmpeg.run(stream, overwrite_output=True, quiet=True)
+                except ffmpeg.Error as e:
+                    extract_error[0] = str(e.stderr.decode('utf-8', errors='ignore') if e.stderr else str(e))
+                except Exception as e:
+                    extract_error[0] = str(e)
+
+            ffmpeg_thread = threading.Thread(target=run_ffmpeg)
+            ffmpeg_thread.start()
+
+            start_time = time.time()
+            while ffmpeg_thread.is_alive():
+                time.sleep(0.5)
+                elapsed = time.time() - start_time
+
+                # El audio se extrae mucho más rápido que un re-encode de video completo.
+                estimated_time = max(duration * 0.3, 3)
+                percent = min(95, int((elapsed / estimated_time) * 100) + 5)
+
+                audio_extract_progress[extract_id].update({
+                    'status': 'converting',
+                    'percent': percent,
+                    'message': f'Extrayendo audio... {percent}%'
+                })
+
+            ffmpeg_thread.join()
+
+            if extract_error[0]:
+                raise Exception(f"Error de FFmpeg: {extract_error[0][:300]}")
+
+            if not output_path.exists():
+                raise Exception("No se pudo crear el archivo de audio")
+
+            filename = output_path.name
+
+            audio_extract_progress[extract_id].update({
+                'status': 'completed',
+                'percent': 100,
+                'message': 'Extracción completada',
+                'filename': filename
+            })
+
+            print(f"[EXTRACT-AUDIO] Extracción completada: {filename}")
+            return output_path, filename
+
+        except Exception as e:
+            audio_extract_progress[extract_id].update({
                 'status': 'error',
                 'percent': 0,
                 'error': str(e)
