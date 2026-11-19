@@ -1,7 +1,7 @@
 ﻿# Publica una versión: compila el instalador, genera SHA256SUMS.txt, etiqueta el código y sube
 # la release a GitHub. Las apps instaladas la detectan solas (aviso «Hay una versión nueva»).
 #   powershell -ExecutionPolicy Bypass -File release.ps1 [-Notes "qué cambió"] [-SkipBuild]
-# Antes: subir APP_VERSION en src\version.py y dejar el código en la rama desktop (commit + push).
+# Antes: subir APP_VERSION en src\version.py y hacer commit en la rama desktop (el script la sube).
 # La app de escritorio se publica desde la rama desktop: main es la web y cada push ahí la despliega
 # a producción, así que este script nunca toca main.
 # Requisitos: gh auth login, Inno Setup 6.
@@ -18,9 +18,17 @@ $version = (Select-String -Path src\version.py -Pattern 'APP_VERSION = "([^"]+)"
 $tag = "v$version"
 
 if (git status --porcelain) { throw "Hay cambios sin confirmar: haz commit y push antes de publicar $tag" }
+# Sube una rama o etiqueta con la sesión de gh como credencial, solo para ese comando: el almacén de
+# credenciales de Windows puede tener guardada otra cuenta de GitHub y el push daría 403.
+function Push-Origin($ref) {
+    git -c credential.helper= -c "credential.helper=!gh auth git-credential" push -q origin $ref
+}
+
 if ((git branch --show-current) -ne $branch) { throw "Estás en otra rama: la app de escritorio se publica desde $branch" }
+Push-Origin $branch   # commits pendientes de desktop; main no se toca nunca
+if ($LASTEXITCODE -ne 0) { throw "no se pudo subir la rama $branch" }
 git fetch -q origin
-if ((git rev-parse HEAD) -ne (git rev-parse "origin/$branch")) { throw "HEAD no es origin/${branch}: sube el código (git push origin $branch) antes de publicar $tag" }
+if ((git rev-parse HEAD) -ne (git rev-parse "origin/$branch")) { throw "HEAD no coincide con origin/${branch}: revisa la rama antes de publicar $tag" }
 
 if (-not $SkipBuild) {
     Write-Host "== Compilando..."
@@ -47,7 +55,7 @@ $notesFile = Join-Path $env:TEMP "universe-downloader-release-notes.md"
 Write-Host "== Etiqueta $tag"
 if (-not (git tag --list $tag)) {
     git tag -a $tag -m "Universe Downloader $version"
-    git push -q origin $tag
+    Push-Origin $tag
     if ($LASTEXITCODE -ne 0) { throw "no se pudo subir la etiqueta $tag" }
 }
 
