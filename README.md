@@ -79,7 +79,7 @@ En Windows se abre en su propia ventana. Con `python src/main.py --browser` (o e
 # Instalador: dist\UniverseDownloader-Setup-<versión>.exe (requiere Inno Setup 6)
 powershell -ExecutionPolicy Bypass -File build.ps1
 
-# Publicar una versión: sube APP_VERSION en src\version.py, haz commit y push a main, y luego
+# Publicar una versión: sube APP_VERSION en src\version.py, haz commit y push a la rama desktop, y luego
 powershell -ExecutionPolicy Bypass -File release.ps1 -Notes "qué cambió"
 ```
 

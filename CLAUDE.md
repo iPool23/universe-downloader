@@ -10,6 +10,10 @@ On macOS (and with `--browser`, or if `pywebview` is missing) it still runs the 
 
 Note: some docs under `docs/` (ARCHITECTURE.md, PROJECT_SUMMARY.md, README_DEV.md) describe an earlier/simpler version of the project (single `src/youtubedpl.py` file, YouTube-only, no image/AI features). They are outdated — treat `src/` itself as the source of truth for current architecture.
 
+## Branches: `desktop` is this app, `main` is the website
+
+The desktop app lives on the `desktop` branch. `main` on GitHub is a different product built from the same origins: the hosted web version (`descargar.pooldeza.com`), with Docker, a VPS deploy, SEO and server-only YouTube workarounds. Its `.github/workflows/deploy.yml` deploys to production on **every push to `main`**. Never push or merge desktop work into `main`, and do not assume the two branches share recent history: `desktop` branched off before the September 2026 web commits, so it lacks their features (for example the "extract audio" section) and `main` lacks the desktop shell and PDF compression. Releases of the desktop app are tagged on `desktop`.
+
 ## Common commands
 
 ```bash
@@ -38,11 +42,11 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 #   -Full     include the AI features (rembg, torch, diffusers: several GB)
 #   -Install  also install the result on this PC (silent)
 
-# Publish: build + SHA256SUMS.txt + tag v<version> + GitHub Release (needs a clean tree pushed to main)
+# Publish: build + SHA256SUMS.txt + tag v<version> + GitHub Release (needs a clean tree pushed to the desktop branch)
 powershell -ExecutionPolicy Bypass -File release.ps1 [-Notes "what changed"] [-SkipBuild]
 ```
 
-- The version lives in one place: `APP_VERSION` in `src/version.py`. `build.ps1`, `release.ps1`, the updater and the sidebar all read it. To ship a new version: bump it, commit and push to `main`, run `release.ps1`.
+- The version lives in one place: `APP_VERSION` in `src/version.py`. `build.ps1`, `release.ps1`, the updater and the sidebar all read it. To ship a new version: bump it, commit and push to `desktop`, run `release.ps1` (it refuses to run from any other branch).
 - `build.ps1` makes sure `bin/` has FFmpeg (`scripts/setup_ffmpeg.py`) and deno (`scripts/setup_deno.py`), runs PyInstaller against `youtubedpl.spec` into `build_out/` (onedir: `UniverseDownloader.exe` + `_internal/`), runs the built exe with `--selftest` and requires `Listo` in `%LOCALAPPDATA%\UniverseDownloader\selftest.txt`, then compiles `installer.iss` with Inno Setup 6.
 - `installer.iss` installs per user (no admin) into `%LOCALAPPDATA%\Programs\UniverseDownloader`. Never change its `AppId`: that is what makes a new version upgrade the installed one in place. It wipes `{app}\_internal` on every install, so nothing the user must keep can live in the program folder (see `DATA_DIR` below).
 - The lite edition sets `UNIVERSE_LITE_BUILD=1`, which `youtubedpl.spec` reads to exclude `rembg`, `torch`, `torchvision`, `diffusers`, `transformers`, etc. (see `excluded_modules` in the spec).
@@ -62,7 +66,7 @@ python scripts/create_release.py --lite
 ```
 
 - `scripts/build.py` and `scripts/create_release.py` are now only the macOS path (`BUILD_MACOS.command` wraps them; FFmpeg must be in `mac/bin/` — see `mac/README.md`). On Windows use `build.ps1`: the spec now produces a folder there, not the single `dist/UniverseDownloader.exe` that `create_release.py` expects.
-- CI: `.github/workflows/macos-release.yml` runs on push to `main` and on `v*` tags, builds the lite `.app`, wraps it in a `.dmg`, and — only for `v*` tags — attaches it to the GitHub Release (the same release `release.ps1` creates for Windows; whichever runs first creates it, the other uploads to it).
+- CI: `.github/workflows/macos-release.yml` runs on `v*` tags (and on push to `main`, which is the website's branch), builds the lite `.app`, wraps it in a `.dmg`, and — only for `v*` tags — attaches it to the GitHub Release (the same release `release.ps1` creates for Windows; whichever runs first creates it, the other uploads to it).
 
 ## Architecture
 
