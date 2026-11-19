@@ -3,6 +3,7 @@ from pathlib import Path
 import importlib.util
 import os
 import platform
+import sys
 
 
 def _module_available(module_name: str) -> bool:
@@ -32,8 +33,30 @@ def get_feature_flags() -> dict:
     return FEATURE_FLAGS.copy()
 
 # Directorios
-BASE_DIR = Path(__file__).parent.parent
-DOWNLOAD_FOLDER = BASE_DIR / "downloads"
+FROZEN = getattr(sys, "frozen", False)
+
+# Recursos de solo lectura: el repo en desarrollo, la carpeta de PyInstaller en la app instalada.
+BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent.parent))
+
+
+def _data_dir() -> Path:
+    """Carpeta de datos que se puede escribir.
+
+    En desarrollo es el repo (como siempre). En la app instalada NO puede ser la carpeta del
+    programa: el instalador la reemplaza en cada actualización y se perdería todo.
+    """
+    if not FROZEN:
+        return BASE_DIR
+    if IS_WINDOWS:
+        return Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "UniverseDownloader"
+    if IS_MAC:
+        return Path.home() / "Library" / "Application Support" / "UniverseDownloader"
+    return Path.home() / ".universe-downloader"
+
+
+DATA_DIR = _data_dir()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DOWNLOAD_FOLDER = DATA_DIR / "downloads"
 DOWNLOAD_FOLDER.mkdir(exist_ok=True)
 DOWNLOADS_DIR = str(DOWNLOAD_FOLDER)
 

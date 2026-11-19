@@ -6,7 +6,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Aplicación web profesional para descargar videos y audio de YouTube, Facebook, Kick, Twitch, TikTok y más en máxima calidad.
+Aplicación de escritorio para Windows que descarga videos y audio de YouTube, Facebook, Kick, Twitch, TikTok y más en máxima calidad. Se instala con un instalador y se actualiza sola.
 
 ## ✨ Características
 
@@ -19,6 +19,7 @@ Aplicación web profesional para descargar videos y audio de YouTube, Facebook, 
 - ✅ Sin dependencias de frontend (Vanilla JS)
 - ✅ Detección automática de FFmpeg
 - ✅ Soporte para múltiples plataformas (YouTube, TikTok, Facebook, Kick, Twitch)
+- ✅ Compresión de PDF con optimización sin pérdida y calidad de imágenes ajustable
 
 ## Arquitectura
 
@@ -52,12 +53,16 @@ src/
 
 ## 🚀 Inicio Rápido
 
-### Instalación
+### Instalación (Windows)
+
+Descarga `UniverseDownloader-Setup-<versión>.exe` desde [Releases](https://github.com/iPool23/universe-downloader/releases) y ejecútalo. No pide administrador. Cuando haya una versión nueva, la app avisa y se actualiza sola.
+
+### Desde el código
 
 ```bash
 # Clonar el repositorio
-git clone https://github.com/iPool23/YouTubeDownloader_v1.0_Windows_with_yt_dlp.git
-cd YouTubeDownloader_v1.0_Windows_with_yt_dlp
+git clone https://github.com/iPool23/universe-downloader.git
+cd universe-downloader
 
 # Instalar dependencias
 pip install -r requirements.txt
@@ -66,7 +71,17 @@ pip install -r requirements.txt
 python src/main.py
 ```
 
-La aplicación se abrirá automáticamente en tu navegador en `http://127.0.0.1:8000`
+En Windows se abre en su propia ventana. Con `python src/main.py --browser` (o en macOS) se abre en el navegador, en `http://127.0.0.1:8000`.
+
+### Compilar y publicar (Windows)
+
+```powershell
+# Instalador: dist\UniverseDownloader-Setup-<versión>.exe (requiere Inno Setup 6)
+powershell -ExecutionPolicy Bypass -File build.ps1
+
+# Publicar una versión: sube APP_VERSION en src\version.py, haz commit y push a main, y luego
+powershell -ExecutionPolicy Bypass -File release.ps1 -Notes "qué cambió"
+```
 
 ## 🍎 macOS
 
@@ -96,11 +111,13 @@ Si prefieres automatizarlo en GitHub, el workflow `.github/workflows/macos-relea
 
 ## 📖 Uso
 
-1. Abre la aplicación en tu navegador
-2. Pega la URL del video de YouTube
-3. Selecciona el formato (MP4 o MP3)
+1. Abre Universe Downloader
+2. Pega el enlace del video y pulsa "Escanear"
+3. Elige el formato (MP4 o MP3) y la calidad
 4. Haz clic en "Descargar"
-5. ¡Listo! El archivo se descargará automáticamente
+5. Elige dónde guardar el archivo
+
+La app no usa cuentas ni cookies. Si un sitio exige iniciar sesión para un video (YouTube lo hace según la red desde la que te conectas), ese video no se puede descargar en ese momento.
 
 ## 🛠️ Tecnologías
 

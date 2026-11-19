@@ -40,6 +40,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.api import router as api_router
 from src.config import DOWNLOADS_DIR, get_feature_flags
+from src.version import APP_NAME, APP_VERSION
 
 # Rutas
 BASE_DIR = Path(__file__).parent.parent
@@ -47,9 +48,9 @@ PUBLIC_DIR = BASE_DIR / "public"
 
 # Crear aplicación
 app = FastAPI(
-    title="Downloader API",
-    description="API para descargar videos y audio de YouTube",
-    version="2.1.0"
+    title=f"{APP_NAME} API",
+    description="Motor local de Universe Downloader",
+    version=APP_VERSION
 )
 
 # Montar archivos estáticos
@@ -78,7 +79,9 @@ async def home():
     html_path = Path(__file__).parent / "views" / "index.html"
     html = html_path.read_text(encoding='utf-8')
     feature_flags = json.dumps(get_feature_flags(), ensure_ascii=False, separators=(",", ":"))
-    return html.replace('{"rembg":true,"outpaint":true}', feature_flags)
+    html = html.replace('{"rembg":true,"outpaint":true}', feature_flags)
+    # versión: la muestra la barra lateral y evita que la ventana use estilos o scripts de la versión anterior
+    return html.replace('__APP_VERSION__', APP_VERSION)
 
 
 @app.get("/health")

@@ -19,7 +19,9 @@ PROJECT_ROOT = Path(__file__).parent.parent
 os.chdir(PROJECT_ROOT)
 
 APP_NAME = "UniverseDownloader"
-VERSION = "2.2.0"
+# la versión vive en un solo sitio: src/version.py
+sys.path.insert(0, str(PROJECT_ROOT))
+from src.version import APP_VERSION as VERSION  # noqa: E402
 ARTIFACT_NAME = f"{APP_NAME}.app" if IS_MAC else f"{APP_NAME}.exe"
 
 print("=" * 60)

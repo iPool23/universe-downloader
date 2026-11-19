@@ -1,9 +1,9 @@
 /**
- * YouTube Downloader - Client Side Application
+ * Universe Downloader - Client Side Application
  * 
  * @author Pool Anthony Deza Millones
  * @github @iPool23
- * @version 2.2.0
+ * @version 3.0.0
  */
 
 let selectedFormat = 'mp4';
@@ -84,7 +84,7 @@ if (!rembgEnabled) {
 }
 
 const navItems = document.querySelectorAll('.nav-item');
-const allViews = ['downloaderView', 'imageConverterView', 'converterView'];
+const allViews = ['downloaderView', 'imageConverterView', 'converterView', 'pdfCompressView'];
 
 if (outpaintEnabled) allViews.push('outpaintView');
 if (rembgEnabled) allViews.push('rembgView');
@@ -99,6 +99,8 @@ navItems.forEach(item => {
         // Visual Active State
         navItems.forEach(nav => nav.classList.remove('active'));
         item.classList.add('active');
+        const viewTitle = document.getElementById('viewTitle');
+        if (viewTitle) viewTitle.textContent = item.dataset.title || item.textContent.trim();
 
         // Hide all views, show target
         allViews.forEach(viewId => {
@@ -212,12 +214,15 @@ async function scanVideo() {
     }
 
     scanBtn.disabled = true;
-    scanBtn.innerHTML = '<i data-lucide="search" style="width: 18px; color: white"></i> Escaneando...';
+    scanBtn.innerHTML = '<i data-lucide="search" style="width: 16px"></i> Escaneando...';
     videoInfo.style.display = 'none';
 
     try {
         const response = await fetch(`/api/scan?url=${encodeURIComponent(url)}`);
-        if (!response.ok) throw new Error('No se pudo obtener la información del video');
+        if (!response.ok) {
+            const problem = await response.json().catch(() => null);
+            throw new Error(problem?.detail || 'No se pudo obtener la información del video');
+        }
 
         const data = await response.json();
 
@@ -287,10 +292,10 @@ async function scanVideo() {
         lucide.createIcons();
 
     } catch (error) {
-        showModal('error', 'x-circle', 'Error', error.message);
+        showModal('error', 'x-circle', 'No se pudo leer el video', error.message);
     } finally {
         scanBtn.disabled = false;
-        scanBtn.innerHTML = '<i data-lucide="search" style="width: 18px; color: white"></i> Escanear';
+        scanBtn.innerHTML = '<i data-lucide="search" style="width: 16px"></i> Escanear';
         lucide.createIcons();
     }
 }
@@ -403,9 +408,13 @@ async function download() {
                 const contentDisposition = fileResponse.headers.get('content-disposition');
                 let filename = 'video.' + selectedFormat;
                 if (contentDisposition) {
-                    const matches = contentDisposition.match(/filename="?(.+)"?/);
-                    if (matches && matches[1]) {
-                        filename = matches[1].replace(/"/g, '');
+                    // con espacios o tildes el motor manda filename*=utf-8''Nombre%20codificado
+                    const encoded = contentDisposition.match(/filename\*=(?:utf-8'')?([^;]+)/i);
+                    const plain = contentDisposition.match(/filename="?([^";]+)"?/i);
+                    if (encoded && encoded[1]) {
+                        try { filename = decodeURIComponent(encoded[1].trim()); } catch (e) { /* se queda el nombre por defecto */ }
+                    } else if (plain && plain[1]) {
+                        filename = plain[1].trim();
                     }
                 }
 
@@ -645,6 +654,265 @@ function updateConvertProgressModal(progress) {
         progressDetails.textContent = 'Convirtiendo video a H.264...';
     } else if (progress.status === 'starting') {
         progressDetails.textContent = 'Iniciando conversión...';
+    }
+}
+
+// =====================================================
+// PDF COMPRESSION
+// =====================================================
+let selectedPdfFile = null;
+let currentPdfCompressId = null;
+let pdfCompressMode = 'quality'; // 'quality' | 'size'
+
+const pdfFileInput = document.getElementById('pdfFileInput');
+if (pdfFileInput) {
+    pdfFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) handlePdfSelection(file);
+    });
+}
+
+const pdfUploadZone = document.getElementById('pdfUploadZone');
+if (pdfUploadZone) {
+    pdfUploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        pdfUploadZone.classList.add('drag-over');
+    });
+
+    pdfUploadZone.addEventListener('dragleave', () => {
+        pdfUploadZone.classList.remove('drag-over');
+    });
+
+    pdfUploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        pdfUploadZone.classList.remove('drag-over');
+        const file = e.dataTransfer.files[0];
+        if (file && file.name.toLowerCase().endsWith('.pdf')) {
+            handlePdfSelection(file);
+        }
+    });
+}
+
+const pdfQualitySlider = document.getElementById('pdfQualitySlider');
+if (pdfQualitySlider) {
+    pdfQualitySlider.addEventListener('input', updatePdfQualityHint);
+}
+
+document.querySelectorAll('.pdf-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.pdf-mode-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        pdfCompressMode = btn.getAttribute('data-pdfmode');
+
+        const qualityGroup = document.getElementById('pdfQualityGroup');
+        const sizeGroup = document.getElementById('pdfSizeGroup');
+        if (qualityGroup) qualityGroup.style.display = pdfCompressMode === 'quality' ? 'block' : 'none';
+        if (sizeGroup) sizeGroup.style.display = pdfCompressMode === 'size' ? 'block' : 'none';
+    });
+});
+
+function updatePdfQualityHint() {
+    const slider = document.getElementById('pdfQualitySlider');
+    const val = document.getElementById('pdfQualityValue');
+    const hint = document.getElementById('pdfQualityHint');
+    if (!slider) return;
+
+    const q = parseInt(slider.value);
+    if (val) val.textContent = q;
+    if (hint) {
+        if (q >= 100) hint.textContent = 'Solo optimización de estructura, sin tocar las imágenes.';
+        else if (q >= 85) hint.textContent = 'Recompresión ligera, calidad casi idéntica a la original.';
+        else if (q >= 60) hint.textContent = 'Buen equilibrio entre calidad y peso final.';
+        else hint.textContent = 'Compresión agresiva, prioriza reducir el peso.';
+    }
+}
+
+function handlePdfSelection(file) {
+    selectedPdfFile = file;
+
+    const uploadZone = document.getElementById('pdfUploadZone');
+    const panel = document.getElementById('pdfPanel');
+    const resetBtn = document.getElementById('pdfResetBtn');
+    if (uploadZone) uploadZone.style.display = 'none';
+    if (panel) panel.style.display = 'block';
+    if (resetBtn) resetBtn.style.display = 'inline-flex';
+
+    const info = document.getElementById('pdfFileInfo');
+    if (info) {
+        const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+        info.textContent = `${file.name} · ${sizeMB} MB`;
+    }
+
+    updatePdfQualityHint();
+    lucide.createIcons();
+}
+
+function resetPdfCompress() {
+    selectedPdfFile = null;
+    currentPdfCompressId = null;
+
+    const uploadZone = document.getElementById('pdfUploadZone');
+    const panel = document.getElementById('pdfPanel');
+    const resetBtn = document.getElementById('pdfResetBtn');
+    if (uploadZone) uploadZone.style.display = 'block';
+    if (panel) panel.style.display = 'none';
+    if (resetBtn) resetBtn.style.display = 'none';
+
+    const fileInput = document.getElementById('pdfFileInput');
+    if (fileInput) fileInput.value = '';
+
+    const slider = document.getElementById('pdfQualitySlider');
+    if (slider) slider.value = 80;
+    updatePdfQualityHint();
+
+    pdfCompressMode = 'quality';
+    document.querySelectorAll('.pdf-mode-btn').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-pdfmode') === 'quality');
+    });
+    const qualityGroup = document.getElementById('pdfQualityGroup');
+    const sizeGroup = document.getElementById('pdfSizeGroup');
+    if (qualityGroup) qualityGroup.style.display = 'block';
+    if (sizeGroup) sizeGroup.style.display = 'none';
+}
+
+async function compressPdf() {
+    if (!selectedPdfFile) return;
+
+    const btn = document.getElementById('pdfCompressBtn');
+    if (btn) btn.disabled = true;
+
+    const quality = document.getElementById('pdfQualitySlider')?.value || 80;
+    const maxSizeMB = document.getElementById('pdfMaxSizeMB')?.value || 30;
+    const originalSize = selectedPdfFile.size;
+
+    if (pdfCompressMode === 'size' && (!maxSizeMB || maxSizeMB <= 0)) {
+        showModal('error', 'x-circle', 'Error', 'Ingresa un peso máximo válido en MB.');
+        if (btn) btn.disabled = false;
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', selectedPdfFile);
+    if (pdfCompressMode === 'size') {
+        formData.append('max_size_mb', maxSizeMB);
+    } else {
+        formData.append('quality', quality);
+    }
+
+    try {
+        showPdfProgressModal();
+
+        const startResponse = await fetch('/api/pdf/compress', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!startResponse.ok) {
+            const error = await startResponse.json();
+            throw new Error(error.detail || 'Error al iniciar la compresión');
+        }
+
+        const { compress_id } = await startResponse.json();
+        currentPdfCompressId = compress_id;
+
+        let completed = false;
+        while (!completed) {
+            await new Promise(resolve => setTimeout(resolve, 800));
+
+            const progressResponse = await fetch(`/api/pdf/compress/progress/${compress_id}`);
+            const progress = await progressResponse.json();
+
+            updatePdfProgressModal(progress);
+
+            if (progress.status === 'completed') {
+                completed = true;
+                currentPdfCompressId = null;
+
+                closeModal();
+
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = `/api/pdf/compress/download/${compress_id}`;
+                a.download = `${selectedPdfFile.name.replace(/\.pdf$/i, '')}_comprimido.pdf`;
+                document.body.appendChild(a);
+                a.click();
+
+                const finalSize = progress.final_size || originalSize;
+                const savings = Math.max(0, Math.round((1 - finalSize / originalSize) * 100));
+                const origMB = (originalSize / 1024 / 1024).toFixed(1);
+                const finalMB = (finalSize / 1024 / 1024).toFixed(1);
+
+                let message = `${origMB} MB → ${finalMB} MB (-${savings}%). La descarga comenzó automáticamente.`;
+                let modalType = 'success';
+                let modalTitle = '¡PDF comprimido!';
+
+                if (pdfCompressMode === 'size') {
+                    if (progress.reached_target === false) {
+                        modalType = 'error';
+                        modalTitle = 'No se pudo alcanzar el peso máximo';
+                        message = `Ni con la compresión más agresiva se logró bajar de ${maxSizeMB} MB. ` +
+                            `Mejor resultado posible: ${origMB} MB → ${finalMB} MB (-${savings}%). Se descargó igual.`;
+                    } else {
+                        message = `${origMB} MB → ${finalMB} MB, dentro del límite de ${maxSizeMB} MB ` +
+                            `(calidad ${progress.quality_used}%). La descarga comenzó automáticamente.`;
+                    }
+                }
+
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    showModal(modalType, modalType === 'success' ? 'check-circle-2' : 'alert-triangle', modalTitle, message);
+                    resetPdfCompress();
+                }, 800);
+
+            } else if (progress.status === 'error') {
+                throw new Error(progress.error || 'Error durante la compresión');
+            }
+        }
+    } catch (error) {
+        closeModal();
+        showModal('error', 'x-circle', 'Error', error.message);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+function showPdfProgressModal() {
+    const modalOverlay = document.getElementById('modalOverlay');
+    const modalContent = document.getElementById('modalContent');
+
+    modalContent.innerHTML = `
+        <div class="modal-icon" style="color: #000000;">
+            <i data-lucide="file-archive" style="width: 48px; height: 48px;"></i>
+        </div>
+        <div class="modal-title">Comprimiendo PDF...</div>
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div class="progress-fill" id="pdfProgressFill" style="width: 0%"></div>
+            </div>
+            <div class="progress-info">
+                <span id="pdfProgressPercent">0%</span>
+            </div>
+            <div class="progress-details" id="pdfProgressDetails">Subiendo archivo...</div>
+        </div>
+    `;
+
+    modalOverlay.classList.add('show');
+    lucide.createIcons();
+}
+
+function updatePdfProgressModal(progress) {
+    const progressFill = document.getElementById('pdfProgressFill');
+    const progressPercent = document.getElementById('pdfProgressPercent');
+    const progressDetails = document.getElementById('pdfProgressDetails');
+
+    if (!progressFill) return;
+
+    const percent = Math.round(progress.percent || 0);
+    progressFill.style.width = `${percent}%`;
+    progressPercent.textContent = `${percent}%`;
+
+    if (progress.message) {
+        progressDetails.textContent = progress.message;
     }
 }
 
@@ -1438,3 +1706,141 @@ async function runRembg() {
     }
     lucide.createIcons();
 }
+
+
+// =====================================================
+// APP DE ESCRITORIO: ESTADO, VERSIÓN Y ACTUALIZACIONES
+// =====================================================
+
+const appInfo = window.APP_INFO || {};
+let updateDismissed = false;
+let updatePolling = false;
+
+function escapeHtml(text) {
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+    return String(text ?? '').replace(/[&<>"]/g, (c) => map[c]);
+}
+
+// La pastilla de la barra superior: «Listo» o «Trabajando…» mientras haya un diálogo con progreso.
+function setStatus(kind, text) {
+    const pill = document.getElementById('statusPill');
+    const label = document.getElementById('statusText');
+    if (!pill || !label) return;
+    pill.className = `pill ${kind}`;
+    label.textContent = text;
+}
+
+(function watchWork() {
+    const overlay = document.getElementById('modalOverlay');
+    if (!overlay) return;
+    const refresh = () => {
+        const working = overlay.classList.contains('show') && overlay.querySelector('.progress-container, .loading-spinner');
+        setStatus(working ? 'busy' : 'ready', working ? 'Trabajando…' : 'Listo');
+    };
+    new MutationObserver(refresh).observe(overlay, { attributes: true, attributeFilter: ['class'], childList: true, subtree: true });
+})();
+
+function renderVersion(state) {
+    const label = document.getElementById('versionLabel');
+    const link = document.getElementById('updateLink');
+    if (!label || !link) return;
+    const current = state?.current || appInfo.version || '';
+    link.classList.toggle('has-update', Boolean(state?.available));
+    label.textContent = state?.available ? `Actualizar a la ${state.version}` : `Versión ${current}`;
+    link.title = state?.available ? `Tienes la ${current}` : 'Buscar actualizaciones';
+}
+
+function renderUpdateBanner(state) {
+    const banners = document.getElementById('banners');
+    if (!banners) return;
+    banners.querySelector('.banner.update')?.remove();
+    if (!state?.available || (updateDismissed && state.status === 'idle')) return;
+
+    const banner = document.createElement('div');
+    banner.className = 'banner update';
+    const version = escapeHtml(state.version);
+    const percent = state.percent || 0;
+    if (state.status === 'downloading' || state.status === 'installing') {
+        const text = state.status === 'installing'
+            ? 'Instalando la actualización: la app se cerrará y volverá a abrirse sola…'
+            : `Descargando la versión ${version}… ${percent}%`;
+        banner.innerHTML = `<i data-lucide="download"></i><span>${text}</span>`
+            + `<div class="banner-bar"><i style="width: ${percent}%"></i></div>`;
+    } else if (state.status === 'error') {
+        banner.innerHTML = `<i data-lucide="alert-triangle"></i>`
+            + `<span>No se pudo actualizar: ${escapeHtml(state.error)}</span>`
+            + `<button class="btn sm primary" type="button" data-act="install">Reintentar</button>`
+            + `<button class="btn sm ghost" type="button" data-act="page">Descargar a mano</button>`;
+    } else {
+        const main = state.can_install
+            ? `<button class="btn sm primary" type="button" data-act="install">Actualizar ahora</button>`
+              + `<button class="btn sm ghost" type="button" data-act="page">Ver cambios</button>`
+            : `<button class="btn sm primary" type="button" data-act="page">Ver la descarga</button>`;
+        banner.innerHTML = `<i data-lucide="sparkles"></i>`
+            + `<span>Hay una versión nueva: <b>${version}</b> (tienes la ${escapeHtml(state.current)}).</span>`
+            + main
+            + `<button class="icon-btn sm" type="button" data-act="dismiss" title="Ahora no"><i data-lucide="x"></i></button>`;
+    }
+    banner.addEventListener('click', (e) => {
+        const act = e.target.closest('[data-act]')?.dataset.act;
+        if (act === 'install') installUpdate();
+        if (act === 'page' && state.page) window.open(state.page, '_blank');
+        if (act === 'dismiss') { updateDismissed = true; banner.remove(); }
+    });
+    banners.prepend(banner);
+    lucide.createIcons();
+}
+
+async function checkForUpdates(manual = false) {
+    const link = document.getElementById('updateLink');
+    link?.classList.add('checking');
+    try {
+        const response = await fetch(`/api/update/check${manual ? '?force=true' : ''}`);
+        const state = await response.json();
+        if (manual) updateDismissed = false;
+        renderVersion(state);
+        renderUpdateBanner(state);
+        if (manual && !state.available) {
+            showModal('success', 'check-circle-2', 'Estás al día', `Tienes la versión más reciente (${state.current}).`);
+        }
+        if (state.status === 'downloading' || state.status === 'installing') pollUpdate();
+    } catch (error) {
+        if (manual) showModal('error', 'wifi-off', 'Sin conexión', 'No se pudo consultar si hay una versión nueva.');
+    } finally {
+        link?.classList.remove('checking');
+    }
+}
+
+async function installUpdate() {
+    try {
+        const response = await fetch('/api/update/install', { method: 'POST' });
+        const state = await response.json();
+        if (!response.ok) throw new Error(state.detail || 'No se pudo iniciar la actualización');
+        renderUpdateBanner(state);
+        pollUpdate();
+    } catch (error) {
+        showModal('error', 'x-circle', 'No se pudo actualizar', error.message);
+    }
+}
+
+async function pollUpdate() {
+    if (updatePolling) return;
+    updatePolling = true;
+    try {
+        while (true) {
+            await new Promise((resolve) => setTimeout(resolve, 600));
+            const state = await (await fetch('/api/update/progress')).json();
+            renderUpdateBanner(state);
+            if (state.status !== 'downloading' && state.status !== 'installing') break;
+        }
+    } catch (error) {
+        // el motor ya se cerró para dejarse reemplazar: el instalador reabre la app
+    } finally {
+        updatePolling = false;
+    }
+}
+
+renderVersion(null);
+// al abrir (sin molestar si no hay red) y luego cada 6 h si la app queda abierta
+setTimeout(() => checkForUpdates(false), 2500);
+setInterval(() => checkForUpdates(false), 6 * 3600 * 1000);

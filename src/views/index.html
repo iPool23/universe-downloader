@@ -5,515 +5,582 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="author" content="Pool Anthony Deza Millones" />
-  <meta name="description" content="Downloader - Descarga videos y audio de múltiples plataformas en máxima calidad" />
-  <meta name="keywords" content="youtube, kick, twitch, downloader, video, audio, mp3, mp4" />
-  <meta name="theme-color" content="#F9BB54" />
-  <title>Downloader</title>
+  <meta name="color-scheme" content="light dark" />
+  <title>Universe Downloader</title>
 
-  <!-- Favicon -->
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-  <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
-
-  <link rel="stylesheet" href="/static/css/styles.css?v=2.2.0" />
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@0.460.0"></script>
+  <link rel="stylesheet" href="/static/css/styles.css?v=__APP_VERSION__" />
+  <!-- Lucide Icons (copia local: la app no depende de internet para pintarse) -->
+  <script src="/static/js/vendor/lucide.min.js?v=0.460.0"></script>
 </head>
 
 <body>
-  <div class="dashboard-wrapper">
-    <!-- Sidebar -->
-    <aside class="sidebar">
+  <div class="app">
+    <!-- Barra lateral -->
+    <aside class="side">
       <div class="brand">
-        <div class="logo-icon"><i data-lucide="youtube"></i></div>
-        <h2>Downloader</h2>
+        <img src="/favicon.ico" alt="" />
+        <span>Universe Downloader</span>
       </div>
 
       <nav class="nav-menu">
-        <a href="#" class="nav-item active" data-view="downloaderView">
-          <span class="icon"><i data-lucide="video"></i></span> Video
+        <div class="nav-group">Video</div>
+        <a href="#" class="nav-item active" data-view="downloaderView" data-title="Descargar video">
+          <i data-lucide="download"></i><span>Descargar</span>
         </a>
-        <a href="#" class="nav-item" data-view="imageConverterView">
-          <span class="icon"><i data-lucide="image"></i></span> Imagen
+        <a href="#" class="nav-item" data-view="converterView" data-title="Convertir a H.264">
+          <i data-lucide="repeat"></i><span>Convertir a H.264</span>
         </a>
-        <a href="#" class="nav-item" data-view="converterView">
-          <span class="icon"><i data-lucide="repeat"></i></span>
-          Convertir
+
+        <div class="nav-group">Imagen</div>
+        <a href="#" class="nav-item" data-view="imageConverterView" data-title="Convertir imagen">
+          <i data-lucide="image"></i><span>Convertir formato</span>
         </a>
-        <a href="#" class="nav-item" data-view="outpaintView">
-          <span class="icon"><i data-lucide="expand"></i></span>
-          IA Outpaint
+        <a href="#" class="nav-item" data-view="rembgView" data-title="Quitar fondo">
+          <i data-lucide="scissors"></i><span>Quitar fondo</span>
         </a>
-        <a href="#" class="nav-item" data-view="rembgView">
-          <span class="icon"><i data-lucide="scissors"></i></span>
-          Quitar Fondo
+        <a href="#" class="nav-item" data-view="outpaintView" data-title="IA Outpaint">
+          <i data-lucide="expand"></i><span>IA Outpaint</span>
+        </a>
+
+        <div class="nav-group">Documentos</div>
+        <a href="#" class="nav-item" data-view="pdfCompressView" data-title="Comprimir PDF">
+          <i data-lucide="file-archive"></i><span>Comprimir PDF</span>
         </a>
       </nav>
-      
-      <div class="theme-toggle-container">
-        <div class="theme-toggle">
-          <i data-lucide="sun"></i>
-          <label class="switch">
+
+      <div class="side-foot">
+        <label class="side-link theme-row" for="themeSwitch">
+          <i data-lucide="moon"></i><span>Tema oscuro</span>
+          <span class="switch">
             <input type="checkbox" id="themeSwitch" />
             <span class="slider"></span>
-          </label>
-          <i data-lucide="moon"></i>
-        </div>
+          </span>
+        </label>
+        <button class="side-link" id="updateLink" type="button" onclick="checkForUpdates(true)" title="Buscar actualizaciones">
+          <i data-lucide="refresh-cw"></i><span id="versionLabel">Versión</span>
+        </button>
       </div>
     </aside>
 
-    <!-- Main Content -->
-    <main class="main-content">
-      <header class="top-header">
-        <h1>Panel de Descarga</h1>
+    <!-- Contenido -->
+    <main class="main">
+      <header class="top">
+        <strong id="viewTitle" class="view-title">Descargar video</strong>
+        <span class="spacer"></span>
+        <span class="pill ready" id="statusPill"><span class="pill-dot"></span><span id="statusText">Listo</span></span>
       </header>
 
-      <div id="downloaderView" class="content-card">
-        <div class="card-header">
-          <h2>Nueva Descarga</h2>
-          <p>Pega el enlace de YouTube para comenzar</p>
-        </div>
+      <div class="banners" id="banners"></div>
 
-        <div class="input-group">
-          <label for="url">URL del Video:</label>
-          <div class="url-input-container">
-            <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=... o cualquier enlace" />
-            <button id="scanBtn" class="scan-btn" onclick="scanVideo()">
-              <i data-lucide="search" style="width: 18px; color: white"></i> Escanear
-            </button>
-          </div>
-        </div>
+      <div class="scroller">
+        <div class="page">
+          <div id="downloaderView" class="content-card">
+            <div class="card-header">
+              <p>Pega el enlace de un video de YouTube, TikTok, Facebook, Kick, Twitch y más.</p>
+            </div>
 
-        <div id="videoInfo" class="video-info" style="display: none">
-          <!-- Contenido dinámico -->
-        </div>
-
-        <div class="input-group">
-          <label>Formato:</label>
-          <div class="format-buttons">
-            <button class="format-btn active" data-format="mp4">
-              <i data-lucide="film" style="width: 18px"></i>
-              MP4 (Video)
-            </button>
-            <button class="format-btn" data-format="mp3">
-              <i data-lucide="music" style="width: 18px"></i>
-              MP3 (Audio)
-            </button>
-          </div>
-        </div>
-
-        <button class="download-btn" onclick="download()">
-          Descargar Archivo
-        </button>
-      </div>
-
-      <!-- Converter View (Hidden by default) -->
-      <div id="converterView" class="content-card" style="display: none">
-        <div class="card-header">
-          <h2>Convertir a H.264</h2>
-          <p>Sube un video para convertirlo a un formato 100% compatible (MP4 H.264)</p>
-        </div>
-
-        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('videoFileInput').click()">
-          <input type="file" id="videoFileInput" accept=".mp4,.webm,.mkv,.avi,.mov" style="display: none" />
-          <div class="upload-content">
-            <i data-lucide="upload-cloud" class="upload-icon"
-              style="width: 48px; height: 48px; color: var(--accent-color); margin-bottom: 15px;"></i>
-            <h3 id="uploadTitle">Haz clic o arrastra un archivo aquí</h3>
-            <p id="uploadSubtitle">Formatos soportados: MP4, WEBM, MKV, AVI, MOV (Máx 500MB)</p>
-          </div>
-        </div>
-
-        <button class="download-btn disabled-btn" id="uploadConvertBtn" onclick="uploadAndConvert()">
-          Selecciona un archivo primero
-        </button>
-      </div>
-
-      <!-- Image Converter View (Hidden by default) -->
-      <div id="imageConverterView" class="content-card" style="display: none">
-        <div class="card-header img-card-header">
-          <div>
-            <h2>Convertir Imagen</h2>
-            <p>Convierte entre PNG, JPG, WebP y AVIF</p>
-          </div>
-          <button class="reset-btn" id="imgResetBtn" onclick="resetImageConverter()" style="display: none">
-            <i data-lucide="rotate-ccw" style="width: 16px; height: 16px;"></i> Nueva imagen
-          </button>
-        </div>
-
-        <!-- Upload Zone (hidden after file selection) -->
-        <div class="upload-zone" id="imgUploadZone" onclick="document.getElementById('imageFileInput').click()">
-          <input type="file" id="imageFileInput" accept=".png,.jpg,.jpeg,.webp,.avif,.bmp,.tiff,.tif" style="display: none" />
-          <div class="upload-content">
-            <i data-lucide="image-plus" class="upload-icon"
-              style="width: 48px; height: 48px; color: var(--accent-color); margin-bottom: 15px;"></i>
-            <h3 id="imgUploadTitle">Haz clic o arrastra una imagen aquí</h3>
-            <p id="imgUploadSubtitle">Formatos: PNG, JPG, WebP, AVIF, BMP, TIFF</p>
-          </div>
-        </div>
-
-        <!-- Editor panel (shown after file selection) -->
-        <div id="imgEditorPanel" style="display: none">
-
-          <!-- Side-by-side comparison -->
-          <div class="img-comparison">
-            <div class="img-comparison-side">
-              <div class="img-comparison-label">
-                <span>Original</span>
-                <span id="imgOriginalInfo" class="img-info-badge"></span>
-              </div>
-              <div class="img-comparison-frame">
-                <img id="imgPreviewOriginal" alt="Original" />
+            <div class="input-group">
+              <label for="url">Enlace del video</label>
+              <div class="url-input-container">
+                <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=…" spellcheck="false" autocomplete="off" />
+                <button id="scanBtn" class="scan-btn" onclick="scanVideo()">
+                  <i data-lucide="search" style="width: 16px"></i> Escanear
+                </button>
               </div>
             </div>
-            <div class="img-comparison-divider">
-              <i data-lucide="arrow-right" style="width: 20px; height: 20px;"></i>
-            </div>
-            <div class="img-comparison-side">
-              <div class="img-comparison-label">
-                <span>Resultado</span>
-                <span id="imgResultInfo" class="img-info-badge"></span>
-              </div>
-              <div class="img-comparison-frame">
-                <img id="imgPreviewResult" alt="Resultado" style="display: none" />
-                <div id="imgResultPlaceholder" class="img-result-placeholder">
-                  <i data-lucide="image" style="width: 32px; height: 32px; opacity: 0.3;"></i>
-                  <span>Ajusta los controles para previsualizar</span>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          <!-- Controls row -->
-          <div class="img-controls-grid">
-            <!-- Format selector -->
-            <div class="input-group" id="imgFormatGroup">
-              <label>Formato destino:</label>
+            <div id="videoInfo" class="video-info" style="display: none">
+              <!-- Contenido dinámico -->
+            </div>
+
+            <div class="input-group">
+              <label>Formato</label>
               <div class="format-buttons">
-                <button class="format-btn img-format-btn active" data-imgformat="webp">WebP</button>
-                <button class="format-btn img-format-btn" data-imgformat="jpg">JPG</button>
-                <button class="format-btn img-format-btn" data-imgformat="png">PNG</button>
-                <button class="format-btn img-format-btn" data-imgformat="avif">AVIF</button>
-              </div>
-            </div>
-
-            <!-- Resize controls -->
-            <div class="input-group">
-              <label>Redimensionar:</label>
-              <div class="img-resize-controls">
-                <div class="img-resize-input">
-                  <span class="img-resize-label">W</span>
-                  <input type="number" id="imgWidth" min="1" max="10000" placeholder="Ancho" />
-                  <span class="img-resize-unit">px</span>
-                </div>
-                <button class="img-aspect-lock active" id="imgAspectLock" onclick="toggleAspectLock()" title="Mantener proporción">
-                  <i data-lucide="lock" style="width: 14px; height: 14px;"></i>
+                <button class="format-btn active" data-format="mp4">
+                  <i data-lucide="film" style="width: 18px"></i>
+                  MP4 (Video)
                 </button>
-                <div class="img-resize-input">
-                  <span class="img-resize-label">H</span>
-                  <input type="number" id="imgHeight" min="1" max="10000" placeholder="Alto" />
-                  <span class="img-resize-unit">px</span>
-                </div>
+                <button class="format-btn" data-format="mp3">
+                  <i data-lucide="music" style="width: 18px"></i>
+                  MP3 (Audio)
+                </button>
               </div>
             </div>
 
-            <!-- Quality slider -->
-            <div class="input-group" id="imgQualityGroup">
-              <label>Calidad: <span id="imgQualityValue">85</span>%</label>
-              <input type="range" id="imgQualitySlider" min="10" max="100" value="85" class="quality-slider" />
-              <div class="quality-hints">
-                <span>Menor tamaño</span>
-                <span>Mayor calidad</span>
-              </div>
-            </div>
-          </div>
-
-          <button class="download-btn" id="imgConvertBtn" onclick="convertImage()">
-            Convertir a WEBP
-          </button>
-        </div>
-      </div>
-
-      <!-- Outpainting View -->
-      <div id="outpaintView" class="content-card" style="display: none">
-        <div class="card-header img-card-header">
-          <div>
-            <h2>IA Outpaint</h2>
-            <p>Expande imágenes con inteligencia artificial (SDXL)</p>
-          </div>
-          <div class="op-header-actions">
-            <span id="opGpuBadge" class="op-gpu-badge loading">
-              <i data-lucide="cpu" style="width: 14px; height: 14px;"></i>
-              <span id="opGpuText">Verificando GPU...</span>
-            </span>
-            <button class="reset-btn" id="opResetBtn" onclick="resetOutpaint()" style="display: none">
-              <i data-lucide="rotate-ccw" style="width: 16px; height: 16px;"></i> Nueva imagen
+            <button class="download-btn" onclick="download()">
+              <i data-lucide="download" style="width: 16px"></i> Descargar
             </button>
           </div>
-        </div>
 
-        <!-- Upload Zone -->
-        <div class="upload-zone" id="opUploadZone" onclick="document.getElementById('opFileInput').click()">
-          <input type="file" id="opFileInput" accept=".png,.jpg,.jpeg,.webp,.bmp" style="display: none" />
-          <div class="upload-content">
-            <i data-lucide="image-plus" class="upload-icon"
-              style="width: 48px; height: 48px; color: var(--accent-color); margin-bottom: 15px;"></i>
-            <h3>Sube una imagen para expandir</h3>
-            <p>PNG, JPG, WebP (la IA generará contenido nuevo alrededor)</p>
-          </div>
-        </div>
-
-        <!-- Editor panel -->
-        <div id="opEditorPanel" style="display: none">
-
-          <!-- Side-by-side -->
-          <div class="img-comparison">
-            <div class="img-comparison-side">
-              <div class="img-comparison-label">
-                <span>Original</span>
-                <span id="opOriginalInfo" class="img-info-badge"></span>
-              </div>
-              <div class="img-comparison-frame">
-                <img id="opPreviewOriginal" alt="Original" />
-              </div>
+          <!-- Converter View (Hidden by default) -->
+          <div id="converterView" class="content-card" style="display: none">
+            <div class="card-header">
+              <p>Sube un video para convertirlo a un formato 100% compatible (MP4 H.264)</p>
             </div>
-            <div class="img-comparison-divider">
-              <i data-lucide="sparkles" style="width: 20px; height: 20px; color: var(--accent-color);"></i>
-            </div>
-            <div class="img-comparison-side">
-              <div class="img-comparison-label">
-                <span>Resultado IA</span>
-                <span id="opResultInfo" class="img-info-badge"></span>
-              </div>
-              <div class="img-comparison-frame">
-                <img id="opPreviewResult" alt="Resultado" style="display: none" />
-                <div id="opResultPlaceholder" class="img-result-placeholder">
-                  <i data-lucide="sparkles" style="width: 32px; height: 32px; opacity: 0.3;"></i>
-                  <span>El resultado aparecerá aquí</span>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          <!-- Controls -->
-          <div class="img-controls-grid">
-            <!-- Direction -->
-            <div class="input-group">
-              <label>Dirección de expansión:</label>
-              <div class="op-direction-grid">
-                <button class="op-dir-btn" data-dir="up" title="Arriba">
-                  <i data-lucide="arrow-up" style="width: 18px;"></i>
-                </button>
-                <button class="op-dir-btn" data-dir="left" title="Izquierda">
-                  <i data-lucide="arrow-left" style="width: 18px;"></i>
-                </button>
-                <button class="op-dir-btn active" data-dir="all" title="Todas">
-                  <i data-lucide="maximize" style="width: 18px;"></i>
-                </button>
-                <button class="op-dir-btn" data-dir="right" title="Derecha">
-                  <i data-lucide="arrow-right" style="width: 18px;"></i>
-                </button>
-                <button class="op-dir-btn" data-dir="down" title="Abajo">
-                  <i data-lucide="arrow-down" style="width: 18px;"></i>
-                </button>
+            <div class="upload-zone" id="uploadZone" onclick="document.getElementById('videoFileInput').click()">
+              <input type="file" id="videoFileInput" accept=".mp4,.webm,.mkv,.avi,.mov" style="display: none" />
+              <div class="upload-content">
+                <i data-lucide="upload-cloud" class="upload-icon"
+                  style="width: 48px; height: 48px; color: var(--accent); margin-bottom: 15px;"></i>
+                <h3 id="uploadTitle">Haz clic o arrastra un archivo aquí</h3>
+                <p id="uploadSubtitle">Formatos soportados: MP4, WEBM, MKV, AVI, MOV (Máx 500MB)</p>
               </div>
             </div>
 
-            <!-- Pixels -->
-            <div class="input-group">
-              <label>Píxeles a expandir: <span id="opPixelsValue">128</span>px</label>
-              <input type="range" id="opPixelsSlider" min="32" max="512" value="128" step="32" class="quality-slider" />
-              <div class="quality-hints">
-                <span>32px</span>
-                <span>512px</span>
-              </div>
-            </div>
-
-            <!-- Steps -->
-            <div class="input-group">
-              <label>Pasos IA: <span id="opStepsValue">20</span></label>
-              <input type="range" id="opStepsSlider" min="15" max="50" value="20" class="quality-slider" />
-              <div class="quality-hints">
-                <span>Rápido</span>
-                <span>Mejor calidad</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Prompt -->
-          <div class="input-group" style="margin-bottom: 20px">
-            <label>Prompt (opcional):</label>
-            <input type="text" id="opPrompt" placeholder="Describe qué quieres generar, ej: landscape, ocean, sky..." style="width: 100%; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-input); color: var(--text-primary); font-size: 14px;" />
-          </div>
-
-          <button class="download-btn" id="opExpandBtn" onclick="runOutpaint()">
-            <i data-lucide="sparkles" style="width: 18px;"></i> Expandir con IA
-          </button>
-        </div>
-      </div>
-
-      <div id="rembgView" class="content-card" style="display: none">
-        <div class="card-header img-card-header">
-          <div>
-            <h2>Quitar Fondo</h2>
-            <p>Elimina el fondo de una imagen y vuélvelo transparente usando IA</p>
-          </div>
-          <div class="op-header-actions">
-            <button class="reset-btn" id="rbResetBtn" onclick="resetRembg()" style="display: none">
-              <i data-lucide="rotate-ccw" style="width: 16px; height: 16px;"></i> Nueva imagen
+            <button class="download-btn disabled-btn" id="uploadConvertBtn" onclick="uploadAndConvert()">
+              Selecciona un archivo primero
             </button>
           </div>
-        </div>
 
-        <!-- Upload Zone -->
-        <div class="upload-zone" id="rbUploadZone" onclick="document.getElementById('rbFileInput').click()">
-          <input type="file" id="rbFileInput" accept=".png,.jpg,.jpeg,.webp,.bmp" style="display: none" />
-          <div class="upload-content">
-            <i data-lucide="scissors" class="upload-icon"
-              style="width: 48px; height: 48px; color: var(--accent-color); margin-bottom: 15px;"></i>
-            <h3>Sube una imagen para quitarle el fondo</h3>
-            <p>PNG, JPG, WebP (se retornará un PNG transparente)</p>
-          </div>
-        </div>
-
-        <!-- Editor panel -->
-        <div id="rbEditorPanel" style="display: none">
-          <div class="img-comparison">
-            <div class="img-comparison-side">
-              <div class="img-comparison-label">
-                <span>Original</span>
-                <span id="rbOriginalInfo" class="img-info-badge"></span>
+          <!-- PDF Compress View (Hidden by default) -->
+          <div id="pdfCompressView" class="content-card" style="display: none">
+            <div class="card-header img-card-header">
+              <div>
+                <p>La estructura del archivo siempre se optimiza sin pérdida; las imágenes internas se recomprimen según la calidad que elijas</p>
               </div>
-              <div class="img-comparison-frame">
-                <img id="rbPreviewOriginal" alt="Original" />
+              <button class="reset-btn" id="pdfResetBtn" onclick="resetPdfCompress()" style="display: none">
+                <i data-lucide="rotate-ccw" style="width: 16px; height: 16px;"></i> Nuevo PDF
+              </button>
+            </div>
+
+            <!-- Upload Zone (hidden after file selection) -->
+            <div class="upload-zone" id="pdfUploadZone" onclick="document.getElementById('pdfFileInput').click()">
+              <input type="file" id="pdfFileInput" accept=".pdf" style="display: none" />
+              <div class="upload-content">
+                <i data-lucide="file-text" class="upload-icon"
+                  style="width: 48px; height: 48px; color: var(--accent); margin-bottom: 15px;"></i>
+                <h3>Haz clic o arrastra un PDF aquí</h3>
+                <p>Cualquier tamaño, se procesa localmente en tu equipo</p>
               </div>
             </div>
 
-            <div class="img-comparison-divider">
-              <i data-lucide="arrow-right" style="width: 20px; height: 20px;"></i>
-            </div>
-
-            <div class="img-comparison-side">
-              <div class="img-comparison-label">
-                <span>Resultado IA</span>
-                <span id="rbResultInfo" class="img-info-badge" style="display: none;"></span>
-              </div>
-              <!-- Checkerboard background for transparency -->
-              <div class="img-comparison-frame" id="rbResultFrame" style="background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(135deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(135deg, transparent 75%, #ccc 75%); background-size: 20px 20px; background-position: 0 0, 10px 0, 10px -10px, 0px 10px; background-color: #eee;">
-                <div class="op-loader" id="rbLoader" style="display: none;">
-                  <div class="op-spinner"></div>
-                  <p id="rbLoaderText">Quitando fondo, por favor espera...</p>
-                </div>
-                <img id="rbPreviewResult" alt="Resultado" style="display: none;" />
-              </div>
-            </div>
-          </div>
-
-          <!-- Advanced AI Options Panel -->
-          <div class="img-controls-grid" style="margin-bottom: 20px; border-top: 1px solid var(--border-color); padding-top: 20px;">
-            <!-- Selector de Modelo de IA -->
-            <div class="input-group">
-              <label style="font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; display: block;">
-                <i data-lucide="brain-circuit" style="width: 15px; height: 15px; display: inline-block; vertical-align: middle; margin-right: 4px; color: var(--accent-color);"></i> Modelo de IA:
-              </label>
-              <select id="rbModelSelect" class="quality-select" style="max-width: 100%; width: 100%;">
-                <option value="birefnet-portrait" selected>Personas (Estudio Pro - BiRefNet)</option>
-                <option value="birefnet-general">Alta Precisión General (Pro - BiRefNet)</option>
-                <option value="u2net_human_seg">Personas (U2Net - Rápido)</option>
-                <option value="u2net">General (Estándar)</option>
-                <option value="isnet-general">Alta Precisión (General - ISNet)</option>
-              </select>
-            </div>
-
-            <!-- Bordes Suaves (Alpha Matting) -->
-            <div class="input-group">
-              <label style="display: flex; align-items: center; justify-content: space-between; font-weight: 600; color: var(--text-secondary); cursor: pointer;">
-                <span>
-                  <i data-lucide="sparkles" style="width: 15px; height: 15px; display: inline-block; vertical-align: middle; margin-right: 4px; color: var(--accent-color);"></i> Bordes Suaves:
-                </span>
-                <label class="switch" style="margin-top: 0; margin-bottom: 10px;">
-                  <input type="checkbox" id="rbAlphaMatting" checked />
-                  <span class="slider"></span>
-                </label>
-              </label>
-              <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
-                Matiza cabello, plumas y bordes complejos con transparencias suaves.
-              </div>
-            </div>
-
-            <!-- Post-procesado (Eliminar Ruido) -->
-            <div class="input-group">
-              <label style="display: flex; align-items: center; justify-content: space-between; font-weight: 600; color: var(--text-secondary); cursor: pointer;">
-                <span>
-                  <i data-lucide="shield-check" style="width: 15px; height: 15px; display: inline-block; vertical-align: middle; margin-right: 4px; color: var(--accent-color);"></i> Limpiar Máscara:
-                </span>
-                <label class="switch" style="margin-top: 0; margin-bottom: 10px;">
-                  <input type="checkbox" id="rbPostProcess" />
-                  <span class="slider"></span>
-                </label>
-              </label>
-              <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
-                Elimina pequeñas imperfecciones aisladas y cierra huecos.
-              </div>
-            </div>
-
-            <!-- Descontaminar Color (Eliminar Halos) -->
-            <div class="input-group">
-              <label style="display: flex; align-items: center; justify-content: space-between; font-weight: 600; color: var(--text-secondary); cursor: pointer;">
-                <span>
-                  <i data-lucide="droplet" style="width: 15px; height: 15px; display: inline-block; vertical-align: middle; margin-right: 4px; color: var(--accent-color);"></i> Descontaminar Bordes:
-                </span>
-                <label class="switch" style="margin-top: 0; margin-bottom: 10px;">
-                  <input type="checkbox" id="rbDecontaminate" />
-                  <span class="slider"></span>
-                </label>
-              </label>
-              <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
-                Elimina reflejos blancos y azules (halos de luz de fondo) en el cabello y los bordes.
-              </div>
-            </div>
-          </div>
-
-          <!-- Opciones adicionales de Alpha Matting -->
-          <div id="rbAlphaMattingOptions" style="display: block; border-top: 1px dashed var(--border-color); padding-top: 20px; margin-bottom: 20px;">
-            <div class="img-controls-grid">
-              <!-- Detalle de Borde (Slider, interactivo) -->
-              <div class="input-group" id="rbErodeGroup">
-                <label style="font-weight: 600; color: var(--text-secondary);">Grosor del Detalle: <span id="rbErodeValue" style="color: var(--accent-color);">5</span>px</label>
-                <input type="range" id="rbErodeSlider" min="1" max="30" value="5" class="quality-slider" />
-                <div class="quality-hints">
-                  <span>Fino (1px)</span>
-                  <span>Ancho (30px)</span>
-                </div>
-              </div>
-
-              <!-- Umbral de Fondo (Sensibilidad Fondo) -->
+            <!-- Panel (shown after file selection) -->
+            <div id="pdfPanel" style="display: none">
               <div class="input-group">
-                <label style="font-weight: 600; color: var(--text-secondary);">Sensibilidad Fondo: <span id="rbBgThresholdValue" style="color: var(--accent-color);">10</span></label>
-                <input type="range" id="rbBgThresholdSlider" min="1" max="100" value="10" class="quality-slider" />
-                <div class="quality-hints">
-                  <span>Conservador (1)</span>
-                  <span>Agresivo (100)</span>
+                <span id="pdfFileInfo" class="img-info-badge"></span>
+              </div>
+
+              <div class="input-group">
+                <label>Modo de compresión:</label>
+                <div class="format-buttons">
+                  <button class="format-btn pdf-mode-btn active" data-pdfmode="quality">Por calidad</button>
+                  <button class="format-btn pdf-mode-btn" data-pdfmode="size">Peso máximo</button>
                 </div>
               </div>
 
-              <!-- Umbral de Frente (Sensibilidad Frente) -->
-              <div class="input-group">
-                <label style="font-weight: 600; color: var(--text-secondary);">Sensibilidad Frente: <span id="rbFgThresholdValue" style="color: var(--accent-color);">240</span></label>
-                <input type="range" id="rbFgThresholdSlider" min="100" max="255" value="240" class="quality-slider" />
+              <div class="input-group" id="pdfQualityGroup">
+                <label>Calidad de imágenes: <span id="pdfQualityValue">80</span>%</label>
+                <input type="range" id="pdfQualitySlider" min="30" max="100" value="80" class="quality-slider" />
                 <div class="quality-hints">
-                  <span>Suave (100)</span>
-                  <span>Sólido (255)</span>
+                  <span>Menor tamaño</span>
+                  <span>Sin pérdida (100%)</span>
+                </div>
+                <div id="pdfQualityHint" style="font-size: 12px; color: var(--text-3); margin-top: 6px;"></div>
+              </div>
+
+              <div class="input-group" id="pdfSizeGroup" style="display: none">
+                <label>Peso máximo del resultado:</label>
+                <div class="img-resize-input" style="max-width: 160px;">
+                  <input type="number" id="pdfMaxSizeMB" min="1" max="1000" step="1" value="30" />
+                  <span class="img-resize-unit">MB</span>
+                </div>
+                <div style="font-size: 12px; color: var(--text-3); margin-top: 6px;">
+                  El programa probará distintas calidades automáticamente hasta encontrar la mejor que quepa en este límite. Puede tardar más que el modo por calidad.
                 </div>
               </div>
+
+              <button class="download-btn" id="pdfCompressBtn" onclick="compressPdf()">
+                <i data-lucide="file-archive" style="width: 18px;"></i> Comprimir PDF
+              </button>
             </div>
           </div>
 
-          <button class="download-btn" id="rbProcessBtn" onclick="runRembg()">
-            <i data-lucide="scissors" style="width: 18px;"></i> Quitar Fondo
-          </button>
+          <!-- Image Converter View (Hidden by default) -->
+          <div id="imageConverterView" class="content-card" style="display: none">
+            <div class="card-header img-card-header">
+              <div>
+                <p>Convierte entre PNG, JPG, WebP y AVIF</p>
+              </div>
+              <button class="reset-btn" id="imgResetBtn" onclick="resetImageConverter()" style="display: none">
+                <i data-lucide="rotate-ccw" style="width: 16px; height: 16px;"></i> Nueva imagen
+              </button>
+            </div>
+
+            <!-- Upload Zone (hidden after file selection) -->
+            <div class="upload-zone" id="imgUploadZone" onclick="document.getElementById('imageFileInput').click()">
+              <input type="file" id="imageFileInput" accept=".png,.jpg,.jpeg,.webp,.avif,.bmp,.tiff,.tif" style="display: none" />
+              <div class="upload-content">
+                <i data-lucide="image-plus" class="upload-icon"
+                  style="width: 48px; height: 48px; color: var(--accent); margin-bottom: 15px;"></i>
+                <h3 id="imgUploadTitle">Haz clic o arrastra una imagen aquí</h3>
+                <p id="imgUploadSubtitle">Formatos: PNG, JPG, WebP, AVIF, BMP, TIFF</p>
+              </div>
+            </div>
+
+            <!-- Editor panel (shown after file selection) -->
+            <div id="imgEditorPanel" style="display: none">
+
+              <!-- Side-by-side comparison -->
+              <div class="img-comparison">
+                <div class="img-comparison-side">
+                  <div class="img-comparison-label">
+                    <span>Original</span>
+                    <span id="imgOriginalInfo" class="img-info-badge"></span>
+                  </div>
+                  <div class="img-comparison-frame">
+                    <img id="imgPreviewOriginal" alt="Original" />
+                  </div>
+                </div>
+                <div class="img-comparison-divider">
+                  <i data-lucide="arrow-right" style="width: 20px; height: 20px;"></i>
+                </div>
+                <div class="img-comparison-side">
+                  <div class="img-comparison-label">
+                    <span>Resultado</span>
+                    <span id="imgResultInfo" class="img-info-badge"></span>
+                  </div>
+                  <div class="img-comparison-frame">
+                    <img id="imgPreviewResult" alt="Resultado" style="display: none" />
+                    <div id="imgResultPlaceholder" class="img-result-placeholder">
+                      <i data-lucide="image" style="width: 32px; height: 32px; opacity: 0.3;"></i>
+                      <span>Ajusta los controles para previsualizar</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Controls row -->
+              <div class="img-controls-grid">
+                <!-- Format selector -->
+                <div class="input-group" id="imgFormatGroup">
+                  <label>Formato destino:</label>
+                  <div class="format-buttons">
+                    <button class="format-btn img-format-btn active" data-imgformat="webp">WebP</button>
+                    <button class="format-btn img-format-btn" data-imgformat="jpg">JPG</button>
+                    <button class="format-btn img-format-btn" data-imgformat="png">PNG</button>
+                    <button class="format-btn img-format-btn" data-imgformat="avif">AVIF</button>
+                  </div>
+                </div>
+
+                <!-- Resize controls -->
+                <div class="input-group">
+                  <label>Redimensionar:</label>
+                  <div class="img-resize-controls">
+                    <div class="img-resize-input">
+                      <span class="img-resize-label">W</span>
+                      <input type="number" id="imgWidth" min="1" max="10000" placeholder="Ancho" />
+                      <span class="img-resize-unit">px</span>
+                    </div>
+                    <button class="img-aspect-lock active" id="imgAspectLock" onclick="toggleAspectLock()" title="Mantener proporción">
+                      <i data-lucide="lock" style="width: 14px; height: 14px;"></i>
+                    </button>
+                    <div class="img-resize-input">
+                      <span class="img-resize-label">H</span>
+                      <input type="number" id="imgHeight" min="1" max="10000" placeholder="Alto" />
+                      <span class="img-resize-unit">px</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Quality slider -->
+                <div class="input-group" id="imgQualityGroup">
+                  <label>Calidad: <span id="imgQualityValue">85</span>%</label>
+                  <input type="range" id="imgQualitySlider" min="10" max="100" value="85" class="quality-slider" />
+                  <div class="quality-hints">
+                    <span>Menor tamaño</span>
+                    <span>Mayor calidad</span>
+                  </div>
+                </div>
+              </div>
+
+              <button class="download-btn" id="imgConvertBtn" onclick="convertImage()">
+                Convertir a WEBP
+              </button>
+            </div>
+          </div>
+
+          <!-- Outpainting View -->
+          <div id="outpaintView" class="content-card" style="display: none">
+            <div class="card-header img-card-header">
+              <div>
+                <p>Expande imágenes con inteligencia artificial (SDXL)</p>
+              </div>
+              <div class="op-header-actions">
+                <span id="opGpuBadge" class="op-gpu-badge loading">
+                  <i data-lucide="cpu" style="width: 14px; height: 14px;"></i>
+                  <span id="opGpuText">Verificando GPU...</span>
+                </span>
+                <button class="reset-btn" id="opResetBtn" onclick="resetOutpaint()" style="display: none">
+                  <i data-lucide="rotate-ccw" style="width: 16px; height: 16px;"></i> Nueva imagen
+                </button>
+              </div>
+            </div>
+
+            <!-- Upload Zone -->
+            <div class="upload-zone" id="opUploadZone" onclick="document.getElementById('opFileInput').click()">
+              <input type="file" id="opFileInput" accept=".png,.jpg,.jpeg,.webp,.bmp" style="display: none" />
+              <div class="upload-content">
+                <i data-lucide="image-plus" class="upload-icon"
+                  style="width: 48px; height: 48px; color: var(--accent); margin-bottom: 15px;"></i>
+                <h3>Sube una imagen para expandir</h3>
+                <p>PNG, JPG, WebP (la IA generará contenido nuevo alrededor)</p>
+              </div>
+            </div>
+
+            <!-- Editor panel -->
+            <div id="opEditorPanel" style="display: none">
+
+              <!-- Side-by-side -->
+              <div class="img-comparison">
+                <div class="img-comparison-side">
+                  <div class="img-comparison-label">
+                    <span>Original</span>
+                    <span id="opOriginalInfo" class="img-info-badge"></span>
+                  </div>
+                  <div class="img-comparison-frame">
+                    <img id="opPreviewOriginal" alt="Original" />
+                  </div>
+                </div>
+                <div class="img-comparison-divider">
+                  <i data-lucide="sparkles" style="width: 20px; height: 20px; color: var(--accent);"></i>
+                </div>
+                <div class="img-comparison-side">
+                  <div class="img-comparison-label">
+                    <span>Resultado IA</span>
+                    <span id="opResultInfo" class="img-info-badge"></span>
+                  </div>
+                  <div class="img-comparison-frame">
+                    <img id="opPreviewResult" alt="Resultado" style="display: none" />
+                    <div id="opResultPlaceholder" class="img-result-placeholder">
+                      <i data-lucide="sparkles" style="width: 32px; height: 32px; opacity: 0.3;"></i>
+                      <span>El resultado aparecerá aquí</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Controls -->
+              <div class="img-controls-grid">
+                <!-- Direction -->
+                <div class="input-group">
+                  <label>Dirección de expansión:</label>
+                  <div class="op-direction-grid">
+                    <button class="op-dir-btn" data-dir="up" title="Arriba">
+                      <i data-lucide="arrow-up" style="width: 18px;"></i>
+                    </button>
+                    <button class="op-dir-btn" data-dir="left" title="Izquierda">
+                      <i data-lucide="arrow-left" style="width: 18px;"></i>
+                    </button>
+                    <button class="op-dir-btn active" data-dir="all" title="Todas">
+                      <i data-lucide="maximize" style="width: 18px;"></i>
+                    </button>
+                    <button class="op-dir-btn" data-dir="right" title="Derecha">
+                      <i data-lucide="arrow-right" style="width: 18px;"></i>
+                    </button>
+                    <button class="op-dir-btn" data-dir="down" title="Abajo">
+                      <i data-lucide="arrow-down" style="width: 18px;"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Pixels -->
+                <div class="input-group">
+                  <label>Píxeles a expandir: <span id="opPixelsValue">128</span>px</label>
+                  <input type="range" id="opPixelsSlider" min="32" max="512" value="128" step="32" class="quality-slider" />
+                  <div class="quality-hints">
+                    <span>32px</span>
+                    <span>512px</span>
+                  </div>
+                </div>
+
+                <!-- Steps -->
+                <div class="input-group">
+                  <label>Pasos IA: <span id="opStepsValue">20</span></label>
+                  <input type="range" id="opStepsSlider" min="15" max="50" value="20" class="quality-slider" />
+                  <div class="quality-hints">
+                    <span>Rápido</span>
+                    <span>Mejor calidad</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Prompt -->
+              <div class="input-group" style="margin-bottom: 20px">
+                <label>Prompt (opcional):</label>
+                <input type="text" id="opPrompt" placeholder="Describe qué quieres generar, ej: landscape, ocean, sky..." style="width: 100%; padding: 10px 14px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); color: var(--text); font-size: 14px;" />
+              </div>
+
+              <button class="download-btn" id="opExpandBtn" onclick="runOutpaint()">
+                <i data-lucide="sparkles" style="width: 18px;"></i> Expandir con IA
+              </button>
+            </div>
+          </div>
+
+          <div id="rembgView" class="content-card" style="display: none">
+            <div class="card-header img-card-header">
+              <div>
+                <p>Elimina el fondo de una imagen y vuélvelo transparente usando IA</p>
+              </div>
+              <div class="op-header-actions">
+                <button class="reset-btn" id="rbResetBtn" onclick="resetRembg()" style="display: none">
+                  <i data-lucide="rotate-ccw" style="width: 16px; height: 16px;"></i> Nueva imagen
+                </button>
+              </div>
+            </div>
+
+            <!-- Upload Zone -->
+            <div class="upload-zone" id="rbUploadZone" onclick="document.getElementById('rbFileInput').click()">
+              <input type="file" id="rbFileInput" accept=".png,.jpg,.jpeg,.webp,.bmp" style="display: none" />
+              <div class="upload-content">
+                <i data-lucide="scissors" class="upload-icon"
+                  style="width: 48px; height: 48px; color: var(--accent); margin-bottom: 15px;"></i>
+                <h3>Sube una imagen para quitarle el fondo</h3>
+                <p>PNG, JPG, WebP (se retornará un PNG transparente)</p>
+              </div>
+            </div>
+
+            <!-- Editor panel -->
+            <div id="rbEditorPanel" style="display: none">
+              <div class="img-comparison">
+                <div class="img-comparison-side">
+                  <div class="img-comparison-label">
+                    <span>Original</span>
+                    <span id="rbOriginalInfo" class="img-info-badge"></span>
+                  </div>
+                  <div class="img-comparison-frame">
+                    <img id="rbPreviewOriginal" alt="Original" />
+                  </div>
+                </div>
+
+                <div class="img-comparison-divider">
+                  <i data-lucide="arrow-right" style="width: 20px; height: 20px;"></i>
+                </div>
+
+                <div class="img-comparison-side">
+                  <div class="img-comparison-label">
+                    <span>Resultado IA</span>
+                    <span id="rbResultInfo" class="img-info-badge" style="display: none;"></span>
+                  </div>
+                  <!-- Checkerboard background for transparency -->
+                  <div class="img-comparison-frame" id="rbResultFrame" style="background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(135deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(135deg, transparent 75%, #ccc 75%); background-size: 20px 20px; background-position: 0 0, 10px 0, 10px -10px, 0px 10px; background-color: #eee;">
+                    <div class="op-loader" id="rbLoader" style="display: none;">
+                      <div class="op-spinner"></div>
+                      <p id="rbLoaderText">Quitando fondo, por favor espera...</p>
+                    </div>
+                    <img id="rbPreviewResult" alt="Resultado" style="display: none;" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Advanced AI Options Panel -->
+              <div class="img-controls-grid" style="margin-bottom: 20px; border-top: 1px solid var(--line-2); padding-top: 20px;">
+                <!-- Selector de Modelo de IA -->
+                <div class="input-group">
+                  <label style="font-weight: 600; color: var(--text-2); margin-bottom: 8px; display: block;">
+                    <i data-lucide="brain-circuit" style="width: 15px; height: 15px; display: inline-block; vertical-align: middle; margin-right: 4px; color: var(--accent);"></i> Modelo de IA:
+                  </label>
+                  <select id="rbModelSelect" class="quality-select" style="max-width: 100%; width: 100%;">
+                    <option value="birefnet-portrait" selected>Personas (Estudio Pro - BiRefNet)</option>
+                    <option value="birefnet-general">Alta Precisión General (Pro - BiRefNet)</option>
+                    <option value="u2net_human_seg">Personas (U2Net - Rápido)</option>
+                    <option value="u2net">General (Estándar)</option>
+                    <option value="isnet-general">Alta Precisión (General - ISNet)</option>
+                  </select>
+                </div>
+
+                <!-- Bordes Suaves (Alpha Matting) -->
+                <div class="input-group">
+                  <label style="display: flex; align-items: center; justify-content: space-between; font-weight: 600; color: var(--text-2); cursor: pointer;">
+                    <span>
+                      <i data-lucide="sparkles" style="width: 15px; height: 15px; display: inline-block; vertical-align: middle; margin-right: 4px; color: var(--accent);"></i> Bordes Suaves:
+                    </span>
+                    <label class="switch" style="margin-top: 0; margin-bottom: 10px;">
+                      <input type="checkbox" id="rbAlphaMatting" checked />
+                      <span class="slider"></span>
+                    </label>
+                  </label>
+                  <div style="font-size: 12px; color: var(--text-3); line-height: 1.4;">
+                    Matiza cabello, plumas y bordes complejos con transparencias suaves.
+                  </div>
+                </div>
+
+                <!-- Post-procesado (Eliminar Ruido) -->
+                <div class="input-group">
+                  <label style="display: flex; align-items: center; justify-content: space-between; font-weight: 600; color: var(--text-2); cursor: pointer;">
+                    <span>
+                      <i data-lucide="shield-check" style="width: 15px; height: 15px; display: inline-block; vertical-align: middle; margin-right: 4px; color: var(--accent);"></i> Limpiar Máscara:
+                    </span>
+                    <label class="switch" style="margin-top: 0; margin-bottom: 10px;">
+                      <input type="checkbox" id="rbPostProcess" />
+                      <span class="slider"></span>
+                    </label>
+                  </label>
+                  <div style="font-size: 12px; color: var(--text-3); line-height: 1.4;">
+                    Elimina pequeñas imperfecciones aisladas y cierra huecos.
+                  </div>
+                </div>
+
+                <!-- Descontaminar Color (Eliminar Halos) -->
+                <div class="input-group">
+                  <label style="display: flex; align-items: center; justify-content: space-between; font-weight: 600; color: var(--text-2); cursor: pointer;">
+                    <span>
+                      <i data-lucide="droplet" style="width: 15px; height: 15px; display: inline-block; vertical-align: middle; margin-right: 4px; color: var(--accent);"></i> Descontaminar Bordes:
+                    </span>
+                    <label class="switch" style="margin-top: 0; margin-bottom: 10px;">
+                      <input type="checkbox" id="rbDecontaminate" />
+                      <span class="slider"></span>
+                    </label>
+                  </label>
+                  <div style="font-size: 12px; color: var(--text-3); line-height: 1.4;">
+                    Elimina reflejos blancos y azules (halos de luz de fondo) en el cabello y los bordes.
+                  </div>
+                </div>
+              </div>
+
+              <!-- Opciones adicionales de Alpha Matting -->
+              <div id="rbAlphaMattingOptions" style="display: block; border-top: 1px dashed var(--line-2); padding-top: 20px; margin-bottom: 20px;">
+                <div class="img-controls-grid">
+                  <!-- Detalle de Borde (Slider, interactivo) -->
+                  <div class="input-group" id="rbErodeGroup">
+                    <label style="font-weight: 600; color: var(--text-2);">Grosor del Detalle: <span id="rbErodeValue" style="color: var(--accent);">5</span>px</label>
+                    <input type="range" id="rbErodeSlider" min="1" max="30" value="5" class="quality-slider" />
+                    <div class="quality-hints">
+                      <span>Fino (1px)</span>
+                      <span>Ancho (30px)</span>
+                    </div>
+                  </div>
+
+                  <!-- Umbral de Fondo (Sensibilidad Fondo) -->
+                  <div class="input-group">
+                    <label style="font-weight: 600; color: var(--text-2);">Sensibilidad Fondo: <span id="rbBgThresholdValue" style="color: var(--accent);">10</span></label>
+                    <input type="range" id="rbBgThresholdSlider" min="1" max="100" value="10" class="quality-slider" />
+                    <div class="quality-hints">
+                      <span>Conservador (1)</span>
+                      <span>Agresivo (100)</span>
+                    </div>
+                  </div>
+
+                  <!-- Umbral de Frente (Sensibilidad Frente) -->
+                  <div class="input-group">
+                    <label style="font-weight: 600; color: var(--text-2);">Sensibilidad Frente: <span id="rbFgThresholdValue" style="color: var(--accent);">240</span></label>
+                    <input type="range" id="rbFgThresholdSlider" min="100" max="255" value="240" class="quality-slider" />
+                    <div class="quality-hints">
+                      <span>Suave (100)</span>
+                      <span>Sólido (255)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <button class="download-btn" id="rbProcessBtn" onclick="runRembg()">
+                <i data-lucide="scissors" style="width: 18px;"></i> Quitar Fondo
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-
     </main>
   </div>
 
@@ -540,8 +607,9 @@
 
   <script>
     window.APP_FEATURES = {"rembg":true,"outpaint":true};
+    window.APP_INFO = {"version":"__APP_VERSION__"};
   </script>
-  <script src="/static/js/app.js?v=2.2.0"></script>
+  <script src="/static/js/app.js?v=__APP_VERSION__"></script>
   <script>
     lucide.createIcons();
   </script>

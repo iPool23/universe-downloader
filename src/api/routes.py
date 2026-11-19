@@ -9,7 +9,7 @@ import json
 import shutil
 import time as _time
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 import os
 from datetime import datetime
 from pydantic import BaseModel
@@ -17,8 +17,11 @@ from pydantic import BaseModel
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.models import DownloadRequest, VideoInfo
 from src.services import DownloaderService
-from src.services.downloader import download_progress, downloads_to_cancel, conversion_progress
+from src.services.downloader import download_progress, downloads_to_cancel, conversion_progress, friendly_error
+from src.services import updater
+from src.services.pdf_service import pdf_service, compress_progress
 from src.config import DOWNLOADS_DIR, ENABLE_OUTPAINT, ENABLE_REMBG
+from src.version import APP_NAME, APP_VERSION, UPDATES_REPO
 
 router = APIRouter(prefix="/api", tags=["download"])
 downloader = DownloaderService()
@@ -82,7 +85,7 @@ async def scan_video(url: str):
         _set_cached_scan(url, result)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=friendly_error(e))
 
 class DownloadStartResponse(BaseModel):
     download_id: str
@@ -110,7 +113,7 @@ def run_download_task(download_id: str, request: DownloadRequest):
     except Exception as e:
         download_progress[download_id] = {
             'status': 'error',
-            'error': str(e),
+            'error': friendly_error(e),
             'percent': 0
         }
 
@@ -745,3 +748,230 @@ async def remove_background_api(
         if input_path.exists():
             input_path.unlink()
         raise HTTPException(status_code=500, detail=f"Error al quitar fondo: {str(e)}")
+
+
+# =====================================================
+# PDF COMPRESSION ENDPOINTS
+# =====================================================
+
+# Almacén temporal de compresiones de PDF completadas
+compress_results: dict = {}
+
+
+def run_compress_pdf_task(
+    compress_id: str,
+    file_path: str,
+    quality: int,
+    original_name: str,
+    max_size_mb: Optional[float] = None,
+):
+    """Ejecuta la compresión de PDF en segundo plano"""
+    try:
+        compress_progress[compress_id].update({
+            'status': 'compressing',
+            'percent': 0,
+            'message': 'Analizando PDF...'
+        })
+
+        input_path = Path(file_path)
+        output_path = input_path.parent / f"pdfcompress_out_{compress_id}.pdf"
+
+        if max_size_mb:
+            max_size_bytes = int(max_size_mb * 1024 * 1024)
+            original_size, final_size, quality_used, reached_target = pdf_service.compress_to_target_size(
+                input_path, output_path, max_size_bytes=max_size_bytes, compress_id=compress_id
+            )
+        else:
+            original_size, final_size = pdf_service.compress(
+                input_path, output_path, quality=quality, compress_id=compress_id
+            )
+            quality_used = quality
+            reached_target = True
+
+        compress_results[compress_id] = {
+            'input_path': str(input_path),
+            'output_path': str(output_path),
+            'output_name': f"{original_name}_comprimido.pdf",
+        }
+        compress_progress[compress_id].update({
+            'status': 'completed',
+            'percent': 100,
+            'original_size': original_size,
+            'final_size': final_size,
+            'quality_used': quality_used,
+            'reached_target': reached_target,
+        })
+    except Exception as e:
+        compress_progress[compress_id] = {
+            'status': 'error',
+            'percent': 0,
+            'error': str(e)
+        }
+
+
+@router.post("/pdf/compress")
+async def start_pdf_compress(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    quality: int = Form(100),
+    max_size_mb: Optional[float] = Form(None),
+):
+    """
+    Sube un PDF e inicia su compresión en segundo plano.
+
+    La estructura del archivo siempre se optimiza sin pérdida. Si se envía
+    `max_size_mb`, se ignora `quality` y en su lugar se busca automáticamente
+    la mejor calidad que quepa en ese límite de peso. De lo contrario, si
+    `quality` < 100, se recomprimen las imágenes internas a esa calidad
+    (100 = no tocarlas).
+    """
+    if Path(file.filename).suffix.lower() != '.pdf':
+        raise HTTPException(status_code=400, detail="El archivo debe ser un PDF")
+
+    quality = max(30, min(100, quality))
+    if max_size_mb is not None and max_size_mb <= 0:
+        raise HTTPException(status_code=400, detail="El peso máximo debe ser mayor que 0")
+
+    compress_id = str(uuid.uuid4())[:8]
+
+    import re
+    original_name = re.sub(r'[^\w\s-]', '', Path(file.filename).stem).strip() or 'documento'
+    input_path = Path(DOWNLOADS_DIR) / f"pdfcompress_in_{compress_id}.pdf"
+
+    try:
+        with open(input_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error guardando archivo: {str(e)}")
+
+    compress_progress[compress_id] = {
+        'status': 'starting',
+        'percent': 0,
+        'message': 'Iniciando compresión...'
+    }
+
+    background_tasks.add_task(
+        run_compress_pdf_task, compress_id, str(input_path), quality, original_name, max_size_mb
+    )
+    return {"compress_id": compress_id, "message": "Compresión iniciada"}
+
+
+@router.get("/pdf/compress/progress/{compress_id}")
+async def get_pdf_compress_progress(compress_id: str):
+    """Obtiene el progreso de una compresión de PDF."""
+    return compress_progress.get(compress_id, {'status': 'unknown', 'percent': 0})
+
+
+@router.get("/pdf/compress/download/{compress_id}")
+async def download_compressed_pdf(compress_id: str):
+    """Descarga el PDF comprimido y limpia los archivos temporales tras enviarlo."""
+    result = compress_results.get(compress_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Compresión no encontrada")
+
+    output_path = Path(result['output_path'])
+    input_path = Path(result['input_path'])
+    if not output_path.exists():
+        raise HTTPException(status_code=404, detail="Archivo comprimido no encontrado")
+
+    def cleanup():
+        try:
+            if input_path.exists():
+                input_path.unlink()
+        except Exception:
+            pass
+        try:
+            if output_path.exists():
+                output_path.unlink()
+        except Exception:
+            pass
+        compress_progress.pop(compress_id, None)
+        compress_results.pop(compress_id, None)
+
+    return FileResponse(
+        path=output_path,
+        filename=result['output_name'],
+        media_type='application/pdf',
+        background=BackgroundTask(cleanup)
+    )
+
+
+# =====================================================
+# APP DE ESCRITORIO: VERSIÓN Y ACTUALIZACIONES
+# =====================================================
+
+_UPDATE_CACHE_TTL = 6 * 3600   # una consulta a GitHub cada 6 h como mucho (salvo «Buscar ahora»)
+_update: dict = {"checked_at": 0.0, "info": None, "status": "idle", "percent": 0, "error": None}
+
+
+@router.get("/app/info")
+async def app_info():
+    """Nombre y versión de la app (los muestra la barra lateral)."""
+    return {"name": APP_NAME, "version": APP_VERSION, "can_install": updater.can_install()}
+
+
+def _update_payload() -> dict:
+    info = _update["info"]
+    return {
+        "current": APP_VERSION,
+        "available": bool(info),
+        "version": info["version"] if info else None,
+        "notes": info["notes"] if info else "",
+        "page": info["page"] if info else "",
+        "size": info["size"] if info else 0,
+        # sin instalador verificable (o en desarrollo / Mac) solo se ofrece abrir la página de la versión
+        "can_install": bool(info and info.get("url") and updater.can_install()),
+        "status": _update["status"],
+        "percent": _update["percent"],
+        "error": _update["error"],
+    }
+
+
+@router.get("/update/check")
+async def update_check(force: bool = False):
+    """Consulta si hay una versión más nueva publicada."""
+    fresh = _time.time() - _update["checked_at"] < _UPDATE_CACHE_TTL
+    if (force or not fresh) and _update["status"] not in ("downloading", "installing"):
+        _update["info"] = await asyncio.to_thread(updater.check, UPDATES_REPO, APP_VERSION)
+        _update["checked_at"] = _time.time()
+        if _update["status"] == "error":
+            _update.update(status="idle", error=None)
+    return _update_payload()
+
+
+def _run_update():
+    """Descarga, verifica y lanza el instalador; después la app se cierra para dejarse reemplazar."""
+    info = _update["info"]
+    try:
+        def on_progress(done, total):
+            _update["percent"] = int(done * 100 / total) if total else 0
+
+        path = updater.fetch_and_verify(info, on_progress)
+        _update.update(status="installing", percent=100)
+        updater.run_installer(path)
+        _time.sleep(1.2)   # que la interfaz alcance a mostrar «Instalando…»
+        os._exit(0)
+    except Exception as e:
+        _update.update(status="error", error=str(e))
+
+
+@router.post("/update/install")
+async def update_install():
+    """Empieza a descargar e instalar la actualización disponible."""
+    info = _update["info"]
+    if not info:
+        raise HTTPException(status_code=404, detail="No hay ninguna actualización pendiente")
+    if not (info.get("url") and updater.can_install()):
+        raise HTTPException(status_code=400, detail="Esta versión se instala a mano desde la página de descargas")
+    if _update["status"] in ("downloading", "installing"):
+        return _update_payload()
+    _update.update(status="downloading", percent=0, error=None)
+    import threading
+    threading.Thread(target=_run_update, daemon=True, name="actualizacion").start()
+    return _update_payload()
+
+
+@router.get("/update/progress")
+async def update_progress():
+    """Progreso de la descarga de la actualización."""
+    return _update_payload()

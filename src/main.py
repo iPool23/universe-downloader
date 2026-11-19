@@ -3,24 +3,54 @@ Punto de entrada de la aplicación
 
 Autor: Pool Anthony Deza Millones
 GitHub: @iPool23
+
+En Windows la app es una ventana de escritorio propia (pywebview sobre Edge WebView2, que ya trae
+el sistema) que muestra la interfaz servida por el motor local. Si pywebview no está disponible,
+o en macOS (ventana sin verificar todavía), se usa el modo anterior: navegador + ícono en la bandeja.
+
+    python src/main.py              ventana de escritorio
+    python src/main.py --browser    modo anterior (navegador + bandeja)
+    python src/main.py --selftest   arranca el motor, comprueba que responde y sale (lo usa build.ps1)
 """
-import uvicorn
-import webbrowser
+import logging
+import os
+import socket
+import sys
 import threading
 import time
-import sys
-import os
-import logging
+import webbrowser
 from pathlib import Path
 
 IS_MAC = sys.platform == 'darwin'
+IS_WINDOWS = sys.platform == 'win32'
 
-# Fix para ejecutar sin consola (windowed mode)
-# Cuando no hay consola, stdout/stderr son None y uvicorn falla
-if sys.stdout is None:
-    sys.stdout = open(os.devnull, 'w')
-if sys.stderr is None:
-    sys.stderr = open(os.devnull, 'w')
+# Agregar el directorio raíz al path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.config import BASE_DIR, DATA_DIR, FROZEN, HOST, PORT  # noqa: E402
+from src.version import APP_ID, APP_NAME, APP_VERSION  # noqa: E402
+
+LOG_FILE = DATA_DIR / "app.log"
+LOG_MAX_BYTES = 2 * 1024 * 1024
+
+
+def _setup_output():
+    """Sin consola (app instalada) stdout/stderr son None y uvicorn falla: se mandan a un registro
+    en la carpeta de datos, que además sirve para diagnosticar. Se reinicia al pasar de 2 MB."""
+    if sys.stdout is not None and sys.stderr is not None and not FROZEN:
+        return
+    try:
+        if LOG_FILE.exists() and LOG_FILE.stat().st_size > LOG_MAX_BYTES:
+            LOG_FILE.unlink()
+        stream = open(LOG_FILE, 'a', encoding='utf-8', buffering=1)
+        stream.write(f"\n=== {APP_NAME} {APP_VERSION} · {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+    except OSError:
+        stream = open(os.devnull, 'w')
+    sys.stdout = sys.stderr = stream
+
+
+_setup_output()
+
 
 # Suprimir errores de conexión cerrada (común en Windows)
 class ConnectionResetFilter(logging.Filter):
@@ -28,141 +58,276 @@ class ConnectionResetFilter(logging.Filter):
         msg = str(record.getMessage())
         return 'ConnectionResetError' not in msg and 'WinError 10054' not in msg
 
-# Aplicar filtro a los loggers de asyncio y uvicorn
+
 for logger_name in ['asyncio', 'uvicorn.error', 'uvicorn.access']:
-    logger = logging.getLogger(logger_name)
-    logger.addFilter(ConnectionResetFilter())
-
-# Agregar el directorio raíz al path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from src.app import app
-from src.config import HOST, PORT
-
-# Variables globales para el servidor y el tray
-server = None
-tray_icon = None
+    logging.getLogger(logger_name).addFilter(ConnectionResetFilter())
 
 
 def get_icon_path():
     """Obtiene la ruta del icono"""
-    if getattr(sys, 'frozen', False):
-        # Si es un ejecutable (PyInstaller)
-        base_dir = Path(sys._MEIPASS)
-    else:
-        # Si es script normal
-        base_dir = Path(__file__).parent.parent
-        
-    icon_candidates = []
+    candidates = [BASE_DIR / "public" / "imgs" / "favicon.ico", BASE_DIR / "mac" / "icon.icns"]
     if IS_MAC:
-        icon_candidates.extend([
-            base_dir / "mac" / "icon.icns",
-            base_dir / "public" / "imgs" / "favicon.ico",
-        ])
-    else:
-        icon_candidates.extend([
-            base_dir / "public" / "imgs" / "favicon.ico",
-            base_dir / "mac" / "icon.icns",
-        ])
-
-    for icon_path in icon_candidates:
+        candidates.reverse()
+    for icon_path in candidates:
         if icon_path.exists():
             return str(icon_path)
-
     return None
 
 
-def open_browser_action():
-    """Abre el navegador en la aplicación"""
-    webbrowser.open(f'http://{HOST}:{PORT}')
+# =====================================================
+# MOTOR LOCAL (FastAPI + uvicorn)
+# =====================================================
+
+def _free_port() -> int:
+    """Un puerto libre de 127.0.0.1: la ventana no depende de que el 8000 esté desocupado."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((HOST, 0))
+        return s.getsockname()[1]
 
 
-def exit_action():
-    """Cierra la aplicación completamente"""
-    global tray_icon, server
-    
-    # Detener el icono del tray
-    if tray_icon:
-        tray_icon.stop()
-    
-    # Forzar salida del proceso
-    os._exit(0)
+def start_server(port: int, timeout: float = 60.0):
+    """Arranca uvicorn en un hilo y espera a que acepte conexiones. Devuelve el servidor."""
+    import uvicorn
+    from src.app import app
+
+    server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=port, log_level="error"))
+    threading.Thread(target=server.run, daemon=True, name="motor").start()
+    deadline = time.time() + timeout
+    while not server.started:
+        if time.time() > deadline:
+            raise RuntimeError("el motor local no arrancó a tiempo")
+        time.sleep(0.05)
+    return server
 
 
-def create_tray_icon():
-    """Crea el icono en la bandeja del sistema"""
-    global tray_icon
-    
+# =====================================================
+# VENTANA DE ESCRITORIO (pywebview)
+# =====================================================
+
+def _windows_identity():
+    """La barra de tareas agrupa la ventana con el acceso directo del instalador (mismo AppUserModelID)."""
+    try:
+        from ctypes import windll
+        windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+    except Exception:
+        pass
+
+
+def _already_running() -> bool:
+    """Una sola instancia: si ya hay una abierta, se trae al frente y esta termina."""
+    try:
+        from ctypes import windll
+        kernel32, user32 = windll.kernel32, windll.user32
+        kernel32.CreateMutexW(None, False, "Local\\UniverseDownloader.SingleInstance")
+        if kernel32.GetLastError() != 183:   # ERROR_ALREADY_EXISTS
+            return False
+        hwnd = user32.FindWindowW(None, APP_NAME)
+        if hwnd:
+            user32.ShowWindow(hwnd, 9)        # SW_RESTORE
+            user32.SetForegroundWindow(hwnd)
+        return True
+    except Exception:
+        return False
+
+
+def _big_icon(hwnd):
+    """Ícono de 256 px en la barra de tareas (WinForms pone uno chico y se ve borroso)."""
+    try:
+        from ctypes import c_int, c_uint, c_void_p, c_wchar_p, windll
+        ico = get_icon_path()
+        if not ico or not ico.endswith('.ico'):
+            return
+        user32 = windll.user32
+        user32.LoadImageW.restype = c_void_p
+        user32.LoadImageW.argtypes = [c_void_p, c_wchar_p, c_uint, c_int, c_int, c_uint]
+        user32.SendMessageW.argtypes = [c_void_p, c_uint, c_void_p, c_void_p]
+        big = user32.LoadImageW(None, ico, 1, 256, 256, 0x10)     # IMAGE_ICON, LR_LOADFROMFILE
+        small = user32.LoadImageW(None, ico, 1, 32, 32, 0x10)
+        if big:
+            user32.SendMessageW(c_void_p(hwnd), 0x80, c_void_p(1), c_void_p(big))    # WM_SETICON, ICON_BIG
+        if small:
+            user32.SendMessageW(c_void_p(hwnd), 0x80, c_void_p(0), c_void_p(small))  # ICON_SMALL
+    except Exception:
+        logging.getLogger("ventana").exception("no se pudo poner el ícono")
+
+
+def _system_dark() -> bool:
+    """Tema del sistema, para que la ventana no destelle en blanco antes de pintar la página."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as key:
+            return winreg.QueryValueEx(key, "AppsUseLightTheme")[0] == 0
+    except Exception:
+        return False
+
+
+WORK_FILE_MAX_AGE_S = 24 * 3600
+
+
+def _clean_work_files():
+    """Borra las copias de trabajo de más de un día (solo en la app instalada).
+
+    Cada descarga deja una copia en la carpeta de trabajo hasta que el usuario la guarda con
+    «Guardar como»; sin esta limpieza se acumularían para siempre en AppData. En desarrollo no se
+    toca nada: ahí la carpeta es downloads/ del repo.
+    """
+    if not FROZEN:
+        return
+    from src.config import DOWNLOAD_FOLDER
+    limit = time.time() - WORK_FILE_MAX_AGE_S
+    for item in DOWNLOAD_FOLDER.iterdir():
+        try:
+            if item.is_file() and item.stat().st_mtime < limit:
+                item.unlink()
+        except OSError:
+            pass   # en uso o sin permiso: se intenta en el próximo arranque
+
+
+def run_window() -> int:
+    """La app como ventana propia. Al cerrarla termina todo el proceso."""
+    import webview
+
+    if IS_WINDOWS:
+        _windows_identity()
+        if _already_running():
+            return 0
+
+    _clean_work_files()
+    port = _free_port()
+    start_server(port)
+
+    # Los archivos terminados salen con el cuadro «Guardar como» de Windows; los enlaces externos
+    # (página de una versión nueva) se abren en el navegador del sistema.
+    webview.settings['ALLOW_DOWNLOADS'] = True
+    webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = True
+    debug_port = os.environ.get("UNIVERSE_UI_DEBUG_PORT")
+    if debug_port:
+        webview.settings['REMOTE_DEBUGGING_PORT'] = int(debug_port)
+
+    window = webview.create_window(
+        APP_NAME, f"http://{HOST}:{port}/", width=1180, height=780, min_size=(900, 600),
+        background_color="#1b1b1a" if _system_dark() else "#f6f6f4", text_select=True,
+    )
+
+    def shown():
+        if IS_WINDOWS:
+            try:
+                _big_icon(int(window.native.Handle.ToInt64()))
+            except Exception:
+                logging.getLogger("ventana").exception("sin acceso a la ventana nativa")
+
+    window.events.shown += shown
+    # private_mode=False + carpeta propia: el tema elegido (localStorage) se conserva entre sesiones
+    webview.start(private_mode=False, storage_path=str(DATA_DIR / "interfaz"),
+                  debug=os.environ.get("UNIVERSE_UI_DEBUG") == "1")
+    os._exit(0)   # cierra también el motor y cualquier descarga en curso
+
+
+# =====================================================
+# MODO ANTERIOR: NAVEGADOR + BANDEJA DEL SISTEMA
+# =====================================================
+
+def run_browser() -> int:
+    """Abre la interfaz en el navegador y deja un ícono en la bandeja para cerrar la app."""
+    import uvicorn
+    from src.app import app
+
+    url = f'http://{HOST}:{PORT}'
+    threading.Thread(target=lambda: (time.sleep(1.5), webbrowser.open(url)), daemon=True).start()
+
+    icon = None
     try:
         import pystray
         from PIL import Image
-    except ImportError:
-        print("pystray o Pillow no están instalados")
-        return None
-    
-    # Cargar icono
-    icon_path = get_icon_path()
-    if icon_path:
+        icon_path = get_icon_path()
         try:
-            image = Image.open(icon_path)
-        except:
-            # Crear icono por defecto si falla
-            image = Image.new('RGB', (64, 64), color='#6366f1')
-    else:
-        # Crear icono por defecto
-        image = Image.new('RGB', (64, 64), color='#6366f1')
-    
-    # Crear menú
-    menu = pystray.Menu(
-        pystray.MenuItem("🌐 Abrir en navegador", lambda: open_browser_action()),
-        pystray.Menu.SEPARATOR,
-        pystray.MenuItem("❌ Cerrar aplicación", lambda: exit_action())
-    )
-    
-    # Crear icono
-    tray_icon = pystray.Icon(
-        "Downloader",
-        image,
-        "Downloader",
-        menu
-    )
-    
-    return tray_icon
+            image = Image.open(icon_path) if icon_path else Image.new('RGB', (64, 64), color='#F9BB54')
+        except Exception:
+            image = Image.new('RGB', (64, 64), color='#F9BB54')
+        menu = pystray.Menu(
+            pystray.MenuItem("Abrir en navegador", lambda: webbrowser.open(url)),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Cerrar aplicación", lambda: os._exit(0)),
+        )
+        icon = pystray.Icon(APP_NAME, image, APP_NAME, menu)
+    except ImportError:
+        print("pystray o Pillow no están instalados: sin ícono en la bandeja")
 
-
-def run_server():
-    """Ejecuta el servidor uvicorn"""
-    global server
-    config = uvicorn.Config(app, host=HOST, port=PORT, log_level="error")
-    server = uvicorn.Server(config)
-    server.run()
-
-
-def open_browser():
-    """Abre el navegador después de iniciar el servidor"""
-    time.sleep(1.5)
-    webbrowser.open(f'http://{HOST}:{PORT}')
-
-
-def main():
-    """Función principal con soporte para system tray"""
-    # Iniciar navegador en hilo separado
-    threading.Thread(target=open_browser, daemon=True).start()
-    
-    # Crear icono del tray
-    icon = create_tray_icon()
-    
     if icon:
-        # Iniciar servidor en hilo separado
-        server_thread = threading.Thread(target=run_server, daemon=True)
-        server_thread.start()
-
-        # Ejecutar el tray icon en el hilo principal
+        server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=PORT, log_level="error"))
+        threading.Thread(target=server.run, daemon=True).start()
         icon.run()
     else:
-        # Fallback: ejecutar sin tray icon
         uvicorn.run(app, host=HOST, port=PORT, log_level="error")
+    return 0
+
+
+# =====================================================
+# AUTOCOMPROBACIÓN (build.ps1)
+# =====================================================
+
+def selftest() -> int:
+    """Arranca el motor en un puerto libre y comprueba lo esencial. Escribe selftest.txt en la carpeta de datos."""
+    import json
+    import urllib.request
+
+    out = DATA_DIR / "selftest.txt"
+    lines = [f"{APP_NAME} {APP_VERSION}"]
+    ok = True
+    try:
+        port = _free_port()
+        start_server(port)
+        base = f"http://{HOST}:{port}"
+        with urllib.request.urlopen(f"{base}/health", timeout=10) as r:
+            lines.append(f"motor: {json.load(r).get('status')}")
+        with urllib.request.urlopen(f"{base}/", timeout=10) as r:
+            html = r.read().decode("utf-8")
+        lines.append(f"interfaz: {len(html)} bytes")
+        with urllib.request.urlopen(f"{base}/static/js/app.js", timeout=10) as r:
+            lines.append(f"app.js: {len(r.read())} bytes")
+        with urllib.request.urlopen(f"{base}/api/app/info", timeout=10) as r:
+            lines.append(f"versión: {json.load(r).get('version')}")
+
+        from src.api.routes import downloader
+        import yt_dlp
+        lines.append(f"yt-dlp: {yt_dlp.version.__version__}")
+        lines.append(f"ffmpeg: {downloader.ffmpeg_path or 'NO ENCONTRADO'}")
+        lines.append(f"js runtime: {', '.join(downloader.js_runtimes) or 'ninguno'}")
+        if not downloader.ffmpeg_path:
+            ok = False
+        if IS_WINDOWS:
+            import webview  # noqa: F401  (que la ventana se pueda crear en la app empaquetada)
+            lines.append("ventana: pywebview disponible")
+    except Exception as e:
+        ok = False
+        lines.append(f"ERROR: {type(e).__name__}: {e}")
+    lines.append("Listo" if ok else "FALLÓ")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print("\n".join(lines))
+    return 0 if ok else 1
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    if "--selftest" in argv:
+        return selftest()
+    if "--browser" not in argv and IS_WINDOWS:
+        try:
+            import webview  # noqa: F401
+        except ImportError:
+            print("pywebview no está instalado: se abre en el navegador")
+        else:
+            return run_window()
+    return run_browser()
 
 
 if __name__ == "__main__":
-    main()
+    code = main()
+    # os._exit no vacía los búferes: sin esto, la salida redirigida (build.ps1, app.log) se pierde
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except Exception:
+            pass
+    os._exit(code or 0)

@@ -51,3 +51,13 @@ bin/
 *.zip
 dist/
 release/
+
+# PDF de prueba para la compresión: documentos de trabajo, nunca al repositorio
+public/pdf/
+
+# App de escritorio: compilación y datos de la ventana en desarrollo
+build_out/
+build_out_tmp/
+build_out_pyinstaller.log
+interfaz/
+selftest.txt

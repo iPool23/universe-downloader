@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple, Callable
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from src.config import DOWNLOAD_FOLDER, MAX_VIDEO_HEIGHT
+from src.config import BASE_DIR, DOWNLOAD_FOLDER, MAX_VIDEO_HEIGHT
 from src.utils import find_ffmpeg, sanitize_filename
 
 # Almacén global de progreso de descargas
@@ -22,6 +22,32 @@ conversion_progress: Dict[str, Dict] = {}
 
 # Descargas marcadas para cancelar
 downloads_to_cancel: set = set()
+
+
+def friendly_error(error) -> str:
+    """Traduce los errores más comunes de yt-dlp a algo que se entienda sin contexto.
+
+    La app no usa cookies ni cuentas: si el sitio exige iniciar sesión, la descarga
+    simplemente no está disponible desde esta conexión.
+    """
+    msg = str(error or "").strip()
+    low = msg.lower()
+    if "sign in to confirm" in low or "login_required" in low or "use --cookies" in low:
+        return ("YouTube está pidiendo iniciar sesión para este video desde tu conexión, "
+                "así que ahora no se puede descargar. Prueba más tarde o desde otra red.")
+    if "private video" in low:
+        return "El video es privado: no se puede descargar."
+    if "video unavailable" in low or "this video is not available" in low:
+        return "El video no está disponible (fue eliminado o está bloqueado en tu región)."
+    if "unsupported url" in low:
+        return "Ese enlace no es de un sitio compatible."
+    if "getaddrinfo failed" in low or "failed to resolve" in low or "timed out" in low:
+        return "No hay conexión con el sitio. Revisa tu internet e inténtalo otra vez."
+    # sin los prefijos repetidos de yt-dlp ("ERROR: ERROR: [youtube] id: …")
+    while low.startswith("error:"):
+        msg = msg[6:].strip()
+        low = msg.lower()
+    return msg or "Error desconocido"
 
 
 class ProgressLogger:
@@ -80,7 +106,9 @@ class DownloaderService:
         # Ensure Python Scripts dir is on PATH (required for pybalt CLI)
         self._setup_python_scripts_path()
         
-        # Ensure deno is on PATH (required by yt-dlp for YouTube n-challenge)
+        # JS runtime que se le pasa a yt-dlp (requerido para el n-challenge de YouTube).
+        # yt-dlp solo habilita deno por defecto: cualquier otro hay que declararlo.
+        self.js_runtimes: Dict[str, Dict] = {}
         self._setup_deno_path()
     
     def _is_tiktok_url(self, url: str) -> bool:
@@ -130,10 +158,13 @@ class DownloaderService:
         deno_path = shutil.which('deno')
         if deno_path:
             print(f"Deno found on PATH: {deno_path}")
+            self.js_runtimes['deno'] = {'path': deno_path}
             return
         
         # 2. Search common installation locations
         search_locations = [
+            # Empaquetado con la app (build.ps1 lo deja en bin/)
+            str(BASE_DIR / 'bin'),
             # Default deno install
             os.path.expanduser(r'~\.deno\bin'),
             # WinGet install (Windows)
@@ -154,11 +185,14 @@ class DownloaderService:
             if os.path.isfile(deno_exe):
                 print(f"Deno found at: {deno_exe}")
                 os.environ["PATH"] = location + os.pathsep + os.environ.get("PATH", "")
+                self.js_runtimes['deno'] = {'path': deno_exe}
                 return
-        
+
         # 3. Also check for node as fallback JS runtime
-        if shutil.which('node'):
-            print("Node.js found on PATH (fallback JS runtime)")
+        node_path = shutil.which('node')
+        if node_path:
+            print(f"Node.js found on PATH (fallback JS runtime): {node_path}")
+            self.js_runtimes['node'] = {'path': node_path}
             return
         
         print("WARNING: No JS runtime (deno/node) found. YouTube downloads may get 403 errors.")
@@ -322,10 +356,14 @@ class DownloaderService:
             # Auto-download latest EJS challenge solver from GitHub
             'remote_components': ['ejs:github'],
         }
-        
+
+        if self.js_runtimes:
+            opts['js_runtimes'] = self.js_runtimes
+
         if self.ffmpeg_path:
             path_obj = Path(self.ffmpeg_path)
             opts['ffmpeg_location'] = self.ffmpeg_path if path_obj.is_dir() else str(path_obj.parent)
+
         
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -430,7 +468,10 @@ class DownloaderService:
             'remote_components': ['ejs:github'],
             # Let yt-dlp use its default player clients and headers.
         }
-        
+
+        if self.js_runtimes:
+            opts['js_runtimes'] = self.js_runtimes
+
         if self.ffmpeg_path:
             path_obj = Path(self.ffmpeg_path)
             if path_obj.is_dir():
@@ -438,11 +479,6 @@ class DownloaderService:
             else:
                 opts['ffmpeg_location'] = str(path_obj.parent)
         
-        # Check for cookies.txt
-        cookies_path = Path("cookies.txt")
-        if cookies_path.exists():
-            opts['cookiefile'] = str(cookies_path.absolute())
-            
         return opts
     
     def _get_audio_options(self, unique_id: str, audio_quality: Optional[int] = None) -> Dict:
