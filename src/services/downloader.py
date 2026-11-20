@@ -5,6 +5,7 @@ import os
 import shutil
 import glob as glob_mod
 import asyncio
+import copy
 import threading
 import time
 from pathlib import Path
@@ -128,6 +129,9 @@ class DownloaderService:
         # yt-dlp solo habilita deno por defecto: cualquier otro hay que declararlo.
         self.js_runtimes: Dict[str, Dict] = {}
         self._setup_deno_path()
+
+        # Análisis de yt-dlp guardado por el escaneo, para que la descarga no lo repita.
+        self._info_cache: Dict[str, Tuple[float, dict]] = {}
 
     def _is_tiktok_url(self, url: str) -> bool:
         """Check if URL is a TikTok URL"""
@@ -355,6 +359,30 @@ class DownloaderService:
         
         return None
 
+    # El escaneo y la descarga analizaban el mismo video dos veces (1 s en sitios rápidos, varios en
+    # los lentos). El escaneo guarda aquí lo que yt-dlp averiguó y la descarga lo retoma. Dura poco
+    # porque los enlaces directos a los formatos caducan.
+    INFO_CACHE_TTL = 300
+    INFO_CACHE_MAX = 20
+
+    def _remember_info(self, url: str, info: dict):
+        now = time.time()
+        for key in [k for k, (t, _) in self._info_cache.items() if now - t >= self.INFO_CACHE_TTL]:
+            self._info_cache.pop(key, None)
+        while len(self._info_cache) >= self.INFO_CACHE_MAX:
+            self._info_cache.pop(next(iter(self._info_cache)), None)
+        self._info_cache[url] = (now, info)
+
+    def _recall_info(self, url: str) -> Optional[dict]:
+        entry = self._info_cache.get(url)
+        if not entry:
+            return None
+        saved_at, info = entry
+        if time.time() - saved_at >= self.INFO_CACHE_TTL:
+            self._info_cache.pop(url, None)
+            return None
+        return copy.deepcopy(info)   # yt-dlp modifica el diccionario al procesarlo
+
     def get_video_info(self, url: str) -> Dict:
         """Obtiene información del video sin descargar"""
         # Limpiar URL de TikTok
@@ -394,6 +422,10 @@ class DownloaderService:
             try:
                 with yt_dlp.YoutubeDL(attempt_opts) as ydl:
                     info = ydl.extract_info(url, download=False)
+                    try:
+                        self._remember_info(url, ydl.sanitize_info(info, remove_private_keys=True))
+                    except Exception:
+                        pass   # sin caché la descarga simplemente analiza de nuevo
 
                     # Extraer calidades disponibles
                     qualities = self._extract_qualities(info)
@@ -693,8 +725,27 @@ class DownloaderService:
 
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    
+                    cached_info = self._recall_info(url) if attempt == 0 else None
+                    info = None
+                    if cached_info is not None:
+                        try:
+                            info = ydl.process_ie_result(cached_info, download=True)
+                        except Exception as cache_error:
+                            # el análisis guardado ya no sirve (enlaces caducados, formato que cambió):
+                            # se descarta, se limpian los restos y se analiza de nuevo
+                            print(f"[CACHE] Análisis guardado no válido, se analiza de nuevo: {str(cache_error)[:120]}")
+                            self._info_cache.pop(url, None)
+                            if unique_id in downloads_to_cancel or download_progress.get(unique_id, {}).get('status') == 'cancelled':
+                                raise
+                            for f in DOWNLOAD_FOLDER.glob(f'{unique_id}.*'):
+                                try: f.unlink()
+                                except Exception: pass
+                            # el error de ese intento no es el resultado de la tarea
+                            download_progress[unique_id].update({'error': None, 'status': 'starting', 'percent': 0})
+                            info = None
+                    if info is None:
+                        info = ydl.extract_info(url, download=True)
+
                     # Buscar archivo descargado
                     downloaded_files = list(DOWNLOAD_FOLDER.glob(f'{unique_id}.*'))
                     
@@ -712,7 +763,8 @@ class DownloaderService:
                     download_progress[unique_id].update({
                         'status': 'completed',
                         'percent': 100,
-                        'filename': filename
+                        'filename': filename,
+                        'error': None,   # los errores de intentos anteriores ya no cuentan
                     })
                     
                     return file_path, filename

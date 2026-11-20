@@ -19,16 +19,20 @@ búscalo aquí. Cada entrada dice qué se midió y con qué script, para poder r
 - **Sin comprobar:** el cuadro nativo en sí no se puede pulsar por CDP; en la prueba se sustituyó
   solo la elección de la ruta. Entre discos distintos el motor copia (no hay otra forma).
 
+### No analizar el video dos veces (20/11/2026)
+- **Problema medido:** `/api/scan` tardaba 1,05 s y la descarga volvía a llamar a `extract_info`
+  desde cero (`medir_descarga.py`: 4,69 s en un tramo de 20 s).
+- **Cambio:** el escaneo guarda el análisis de yt-dlp (`_remember_info`, 5 minutos, 20 entradas) y
+  la descarga lo retoma con `process_ie_result` en su primer intento. Si ese análisis ya no sirve
+  (enlaces caducados), se descarta, se limpian los restos y se analiza de nuevo.
+- **Resultado:** 4,69 s → 3,47 s (mediana de 3 pasadas), un 26 % menos. Con el análisis estropeado a
+  propósito la descarga se recupera sola (5,1 s) y no deja errores guardados.
+- **Ojo:** la clave de la caché es la URL tal como la limpia el escaneo. Si se cambia cómo se limpia
+  una URL en `get_video_info`, hay que hacer lo mismo en `download`.
+
 ## Pendiente (medido, con ganancia clara)
 
 Ordenado por lo que más nota el dueño.
-
-### 2. No analizar el video dos veces
-- **Problema medido:** `/api/scan` tarda 1,05 s y la descarga volvía a llamar a `extract_info`
-  desde cero (`medir_descarga.py`: 4,69 s hasta el primer avance en un tramo de 20 s).
-- **Cambio:** guardar el resultado del análisis junto a la caché del escaneo y dárselo a yt-dlp al
-  descargar (`process_ie_result`), con análisis nuevo como respaldo si falla o caducó.
-- **Se espera:** ~1 s menos por descarga en archive.org; más en sitios de análisis lento.
 
 ### 3. Crear la ventana mientras arranca el motor
 - **Problema medido:** la ventana no empezaba a crearse hasta que el motor escuchaba (0,72 s en la

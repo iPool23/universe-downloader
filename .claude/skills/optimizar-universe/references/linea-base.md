@@ -58,6 +58,7 @@ Medido con `urllib`; dentro de WebView2 el blob cuesta además la copia a disco 
 | Fecha | Caso | Escaneo | Hasta el primer avance | Total | Nota |
 | --- | --- | --- | --- | --- | --- |
 | 2026-11-20 | archive.org, tramo 0–20 s, 360p | 1,05 s (repetido: 1 ms) | 4,69 s | 4,69 s | Línea base. La descarga volvía a analizar el video (~1 s) |
+| 2026-11-20 | archive.org, tramo 0–20 s, 360p | 0,87 s | 3,47 s | 3,47 s | La descarga reutiliza el análisis del escaneo (mediana de 3) |
 | 2026-11-20 | YouTube | 3,53 s → «inicia sesión» | — | — | Bloqueo por IP, no medible desde esta red |
 
 ## Interfaz (`medir_ui.mjs`)
