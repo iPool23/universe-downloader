@@ -1693,7 +1693,8 @@ function toggleAspectLock() {
 function updateImgConvertBtnText() {
     const convertBtn = document.getElementById('imgConvertBtn');
     if (convertBtn && selectedImageFile) {
-        convertBtn.textContent = `Convertir a ${selectedImgFormat.toUpperCase()}`;
+        convertBtn.innerHTML = `<i data-lucide="download" style="width: 16px"></i> Guardar ${selectedImgFormat.toUpperCase()}`;
+        lucide.createIcons();
     }
 }
 
@@ -1731,8 +1732,10 @@ function handleImageSelection(file) {
                 // Show original info
                 const origInfo = document.getElementById('imgOriginalInfo');
                 const ext = file.name.split('.').pop().toUpperCase();
-                const sizeKB = (file.size / 1024).toFixed(1);
-                if (origInfo) origInfo.textContent = `${ext} · ${imgOriginalWidth}×${imgOriginalHeight} · ${sizeKB}KB`;
+                if (origInfo) origInfo.textContent = `${ext} · ${imgOriginalWidth}×${imgOriginalHeight} · ${formatBytes(file.size)}`;
+
+                comparadorAjustar(true);   // tamaño real si cabe; si no, ajustada a la ventana
+                generatePreview();         // el resultado se ve desde el primer momento
             };
             tmpImg.src = e.target.result;
         };
@@ -1790,7 +1793,11 @@ function resetImageConverter() {
     const placeholder = document.getElementById('imgResultPlaceholder');
     if (origImg) origImg.src = '';
     if (resultImg) { resultImg.src = ''; resultImg.style.display = 'none'; }
-    if (placeholder) placeholder.style.display = 'flex';
+    if (placeholder) placeholder.style.display = 'none';
+    previewSeq++;   // descarta una vista previa que aún esté en camino
+    if (lastPreview?.url) URL.revokeObjectURL(lastPreview.url);
+    lastPreview = null;
+    pintarResumenImagen(null);
 
     // Clear info badges
     const origInfo = document.getElementById('imgOriginalInfo');
@@ -1820,52 +1827,79 @@ function resetImageConverter() {
 function schedulePreview() {
     if (!selectedImageFile) return;
     clearTimeout(previewDebounceTimer);
-    previewDebounceTimer = setTimeout(() => generatePreview(), 500);
+    previewDebounceTimer = setTimeout(() => generatePreview(), 250);
+}
+
+// Ajustes actuales del editor: la consulta para el motor y una clave para saber si la última
+// vista previa sigue correspondiendo a lo que hay en pantalla.
+function ajustesDeImagen() {
+    const quality = document.getElementById('imgQualitySlider')?.value || 85;
+    const width = document.getElementById('imgWidth')?.value || '';
+    const height = document.getElementById('imgHeight')?.value || '';
+    let query = `target_format=${selectedImgFormat}&quality=${quality}`;
+    if (width) query += `&width=${width}`;
+    if (height) query += `&height=${height}`;
+    return { query, width, height, key: `${selectedImgFormat}|${quality}|${width}|${height}` };
+}
+
+let lastPreview = null;   // { key, blob, url }: «Guardar» la reutiliza en vez de convertir otra vez
+let previewSeq = 0;
+
+// El resumen grande del panel: cuánto se ahorra y de cuánto a cuánto.
+function pintarResumenImagen(bytes, mensaje) {
+    const saving = document.getElementById('sqSaving');
+    const sizes = document.getElementById('sqSizes');
+    if (!saving || !sizes) return;
+    saving.classList.remove('smaller', 'bigger');
+    if (!bytes || !selectedImageFile) {
+        saving.textContent = '—';
+        sizes.textContent = mensaje || '';
+        return;
+    }
+    const cambio = Math.round((bytes / selectedImageFile.size - 1) * 100);
+    saving.textContent = cambio === 0 ? 'Igual' : `${cambio < 0 ? '−' : '+'}${Math.abs(cambio)} %`;
+    if (cambio !== 0) saving.classList.add(cambio < 0 ? 'smaller' : 'bigger');
+    sizes.textContent = `${formatBytes(selectedImageFile.size)} → ${formatBytes(bytes)}`;
 }
 
 async function generatePreview() {
     if (!selectedImageFile) return;
 
     const resultImg = document.getElementById('imgPreviewResult');
-    const placeholder = document.getElementById('imgResultPlaceholder');
+    const busy = document.getElementById('imgResultPlaceholder');
     const resultInfo = document.getElementById('imgResultInfo');
-
-    const quality = document.getElementById('imgQualitySlider')?.value || 85;
-    const width = document.getElementById('imgWidth')?.value || '';
-    const height = document.getElementById('imgHeight')?.value || '';
-
-    let queryParams = `target_format=${selectedImgFormat}&quality=${quality}`;
-    if (width) queryParams += `&width=${width}`;
-    if (height) queryParams += `&height=${height}`;
+    const { query, width, height, key } = ajustesDeImagen();
+    const seq = ++previewSeq;   // si llega otra petición después, esta ya no cuenta
 
     const formData = new FormData();
     formData.append('file', selectedImageFile);
+    if (busy) busy.style.display = 'flex';
 
     try {
-        const response = await fetch(`/api/convert-image?${queryParams}`, {
-            method: 'POST', body: formData
-        });
-
-        if (!response.ok) return;
-
+        const response = await fetch(`/api/convert-image?${query}`, { method: 'POST', body: formData });
+        if (!response.ok) {
+            const problem = await response.json().catch(() => null);
+            throw new Error(problem?.detail || 'No se pudo generar la vista previa');
+        }
         const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
+        if (seq !== previewSeq) return;
 
+        if (lastPreview?.url) URL.revokeObjectURL(lastPreview.url);
+        lastPreview = { key, blob, url: URL.createObjectURL(blob) };
         if (resultImg) {
-            resultImg.src = url;
+            resultImg.src = lastPreview.url;
             resultImg.style.display = 'block';
         }
-        if (placeholder) placeholder.style.display = 'none';
-
-        // Show result info
-        const sizeKB = (blob.size / 1024).toFixed(1);
-        const savings = ((1 - blob.size / selectedImageFile.size) * 100).toFixed(0);
-        const dimText = (width && height) ? `${width}×${height} · ` : '';
-        const savingsText = savings > 0 ? `(-${savings}%)` : `(+${Math.abs(savings)}%)`;
-        if (resultInfo) resultInfo.textContent = `${selectedImgFormat.toUpperCase()} · ${dimText}${sizeKB}KB ${savingsText}`;
-
+        const dims = (width && height) ? `${width}×${height}` : `${imgOriginalWidth}×${imgOriginalHeight}`;
+        if (resultInfo) resultInfo.textContent = `${selectedImgFormat.toUpperCase()} · ${dims} · ${formatBytes(blob.size)}`;
+        pintarResumenImagen(blob.size);
     } catch (err) {
-        // Silent fail for preview
+        if (seq !== previewSeq) return;
+        lastPreview = null;
+        if (resultInfo) resultInfo.textContent = 'Sin vista previa';
+        pintarResumenImagen(null, err.message);
+    } finally {
+        if (seq === previewSeq && busy) busy.style.display = 'none';
     }
 }
 
@@ -1907,72 +1941,179 @@ async function convertImage() {
     if (!selectedImageFile) return;
 
     const convertBtn = document.getElementById('imgConvertBtn');
-    const originalText = convertBtn.textContent;
     convertBtn.classList.add('disabled-btn');
-
-    const quality = document.getElementById('imgQualitySlider')?.value || 85;
-    const width = document.getElementById('imgWidth')?.value || '';
-    const height = document.getElementById('imgHeight')?.value || '';
-
-    let queryParams = `target_format=${selectedImgFormat}&quality=${quality}`;
-    if (width) queryParams += `&width=${width}`;
-    if (height) queryParams += `&height=${height}`;
-
-    const formData = new FormData();
-    formData.append('file', selectedImageFile);
-
-    // El servidor no reporta avance de la conversión en sí (es una sola respuesta HTTP),
-    // así que tras terminar la subida simulamos un avance suave hasta 95% para que el
-    // usuario nunca vea un texto estático sin señal de cuánto falta.
-    let processingTimer = null;
-    const startProcessingAnimation = () => {
-        let fake = 0;
-        convertBtn.textContent = 'Procesando... 0%';
-        processingTimer = setInterval(() => {
-            fake = Math.min(fake + Math.random() * 8, 95);
-            convertBtn.textContent = `Procesando... ${Math.round(fake)}%`;
-        }, 200);
-    };
-    const stopProcessingAnimation = () => {
-        if (processingTimer) { clearInterval(processingTimer); processingTimer = null; }
-    };
-
     try {
-        const blob = await uploadWithProgress(`/api/convert-image?${queryParams}`, formData, (percent, phase) => {
-            if (phase === 'uploading') {
-                convertBtn.textContent = `Subiendo... ${percent}%`;
-            } else if (phase === 'processing' && !processingTimer) {
-                startProcessingAnimation();
-            }
-        });
-        stopProcessingAnimation();
+        const { query, key } = ajustesDeImagen();
+        // La vista previa ES el archivo final: si corresponde a los ajustes de ahora, no se convierte de nuevo.
+        let blob = (lastPreview && lastPreview.key === key) ? lastPreview.blob : null;
+        if (!blob) {
+            convertBtn.textContent = 'Convirtiendo…';
+            const formData = new FormData();
+            formData.append('file', selectedImageFile);
+            blob = await uploadWithProgress(`/api/convert-image?${query}`, formData, () => {});
+        }
 
-        const originalName = selectedImageFile.name.replace(/\.[^.]+$/, '');
-        const fileName = `${originalName}.${selectedImgFormat}`;
-
+        const fileName = `${selectedImageFile.name.replace(/\.[^.]+$/, '')}.${selectedImgFormat}`;
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = fileName;
         document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);   // el cuadro «Guardar como» puede tardar
 
-        const originalSize = (selectedImageFile.size / 1024).toFixed(1);
-        const convertedSize = (blob.size / 1024).toFixed(1);
-        convertBtn.textContent = `Descargado (${originalSize}KB → ${convertedSize}KB)`;
-        convertBtn.classList.remove('disabled-btn');
-
-        setTimeout(() => { convertBtn.textContent = originalText; }, 4000);
-
+        convertBtn.textContent = 'Listo ✓';
+        setTimeout(updateImgConvertBtnText, 2500);
     } catch (error) {
-        stopProcessingAnimation();
-        showModal('error', 'x-circle', 'Error', error.message);
-        convertBtn.textContent = originalText;
+        showModal('error', 'x-circle', 'No se pudo convertir', error.message);
+        updateImgConvertBtnText();
+    } finally {
         convertBtn.classList.remove('disabled-btn');
     }
 }
+
+
+// =====================================================
+// COMPARADOR: ORIGINAL Y RESULTADO SUPERPUESTOS
+// =====================================================
+// Dos capas del mismo tamaño, una encima de la otra; la de arriba (el resultado) solo se ve a la
+// derecha de una línea que se arrastra. El zoom y el desplazamiento se aplican igual a las dos, así
+// que siempre se compara el mismo punto de la imagen.
+
+const comparador = { split: 50, zoom: 1, panX: 0, panY: 0, base: 1 };
+
+function comparadorPintar() {
+    const stage = document.getElementById('sqStage');
+    if (!stage) return;
+    stage.style.setProperty('--split', `${comparador.split}%`);
+    document.getElementById('sqDivider')?.setAttribute('aria-valuenow', String(Math.round(comparador.split)));
+
+    const w = imgOriginalWidth * comparador.base;
+    const h = imgOriginalHeight * comparador.base;
+    // no dejar que la imagen se salga del todo al desplazarla
+    const maxX = Math.max(0, (w * comparador.zoom - stage.clientWidth) / 2);
+    const maxY = Math.max(0, (h * comparador.zoom - stage.clientHeight) / 2);
+    comparador.panX = Math.min(maxX, Math.max(-maxX, comparador.panX));
+    comparador.panY = Math.min(maxY, Math.max(-maxY, comparador.panY));
+
+    stage.querySelectorAll('.sq-canvas').forEach((canvas) => {
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+        canvas.style.transform = `translate(${comparador.panX}px, ${comparador.panY}px) scale(${comparador.zoom})`;
+    });
+    const label = document.getElementById('sqZoomValue');
+    if (label) label.textContent = `${Math.round(comparador.base * comparador.zoom * 100)} %`;
+}
+
+// Calcula el tamaño de partida: real (100 %) si cabe en la zona, o ajustada si es más grande.
+// Con reiniciar=true vuelve además al centro, sin zoom y con la línea a la mitad.
+function comparadorAjustar(reiniciar = false) {
+    const stage = document.getElementById('sqStage');
+    // el reinicio va primero: vale aunque la zona todavía no tenga tamaño (se acaba de mostrar)
+    if (reiniciar) Object.assign(comparador, { split: 50, zoom: 1, panX: 0, panY: 0, pendiente: true });
+    if (!stage || !imgOriginalWidth || !imgOriginalHeight || !stage.clientWidth) return;
+    const margen = 32;
+    const cabe = Math.min((stage.clientWidth - margen) / imgOriginalWidth, (stage.clientHeight - margen) / imgOriginalHeight);
+    const anterior = comparador.base * comparador.zoom;
+    comparador.base = Math.min(1, Math.max(cabe, 0.01));
+    if (comparador.pendiente) {
+        comparador.pendiente = false;   // primera medida de esta imagen: sin zoom heredado
+        comparador.zoom = 1;
+    } else {
+        comparador.zoom = Math.max(1, anterior / comparador.base);   // al cambiar la ventana se conserva lo que se veía
+    }
+    comparadorPintar();
+}
+
+function comparadorZoom(factor) {
+    const real = 1 / comparador.base;                       // zoom con el que se ve a 100 %
+    const maximo = Math.max(8, real * 4);
+    comparador.zoom = Math.min(maximo, Math.max(1, comparador.zoom * factor));
+    if (Math.abs(comparador.zoom - 1) < 0.02) comparador.zoom = 1;
+    comparadorPintar();
+}
+
+(function iniciarComparador() {
+    const stage = document.getElementById('sqStage');
+    const divider = document.getElementById('sqDivider');
+    if (!stage || !divider) return;
+
+    // --- la línea: arrastrar o flechas del teclado
+    const moverLinea = (clientX) => {
+        const rect = stage.getBoundingClientRect();
+        comparador.split = Math.min(100, Math.max(0, ((clientX - rect.left) / rect.width) * 100));
+        comparadorPintar();
+    };
+    divider.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        divider.setPointerCapture(e.pointerId);
+        divider.classList.add('dragging');
+        moverLinea(e.clientX);
+    });
+    divider.addEventListener('pointermove', (e) => { if (divider.hasPointerCapture(e.pointerId)) moverLinea(e.clientX); });
+    const soltarLinea = (e) => { divider.classList.remove('dragging'); if (divider.hasPointerCapture(e.pointerId)) divider.releasePointerCapture(e.pointerId); };
+    divider.addEventListener('pointerup', soltarLinea);
+    divider.addEventListener('pointercancel', soltarLinea);
+    divider.addEventListener('keydown', (e) => {
+        const pasos = { ArrowLeft: -2, ArrowRight: 2, PageDown: -10, PageUp: 10 };
+        if (e.key in pasos) comparador.split = Math.min(100, Math.max(0, comparador.split + pasos[e.key]));
+        else if (e.key === 'Home') comparador.split = 0;
+        else if (e.key === 'End') comparador.split = 100;
+        else return;
+        e.preventDefault();
+        comparadorPintar();
+    });
+
+    // --- la imagen: arrastrar para desplazarla cuando está ampliada
+    let arrastre = null;
+    stage.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('.sq-zoom, .sq-close, .sq-divider') || e.button !== 0) return;
+        arrastre = { x: e.clientX, y: e.clientY, panX: comparador.panX, panY: comparador.panY };
+        stage.setPointerCapture(e.pointerId);
+        stage.classList.add('panning');
+    });
+    stage.addEventListener('pointermove', (e) => {
+        if (!arrastre) return;
+        comparador.panX = arrastre.panX + (e.clientX - arrastre.x);
+        comparador.panY = arrastre.panY + (e.clientY - arrastre.y);
+        comparadorPintar();
+    });
+    const soltarImagen = () => { arrastre = null; stage.classList.remove('panning'); };
+    stage.addEventListener('pointerup', soltarImagen);
+    stage.addEventListener('pointercancel', soltarImagen);
+
+    // --- zoom: rueda del ratón y botones
+    stage.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        comparadorZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15);
+    }, { passive: false });
+    document.getElementById('sqZoomIn')?.addEventListener('click', () => comparadorZoom(1.25));
+    document.getElementById('sqZoomOut')?.addEventListener('click', () => comparadorZoom(1 / 1.25));
+    document.getElementById('sqZoomFit')?.addEventListener('click', () => comparadorAjustar(true));
+    document.getElementById('sqZoomValue')?.addEventListener('click', () => {   // a tamaño real
+        comparador.zoom = Math.max(1, 1 / comparador.base);
+        comparador.panX = comparador.panY = 0;
+        comparadorPintar();
+    });
+
+    // --- la zona cambia de tamaño (ventana, panel) o se muestra por primera vez
+    new ResizeObserver(() => comparadorAjustar(false)).observe(stage);
+
+    // --- con el editor abierto, la vista ocupa todo el panel
+    const view = document.getElementById('imageConverterView');
+    const editor = document.getElementById('imgEditorPanel');
+    const page = document.querySelector('.page');
+    const sincronizar = () => {
+        const abierto = view.style.display !== 'none' && editor.style.display !== 'none';
+        page.classList.toggle('page-full', abierto);
+    };
+    const observer = new MutationObserver(sincronizar);
+    observer.observe(view, { attributes: true, attributeFilter: ['style'] });
+    observer.observe(editor, { attributes: true, attributeFilter: ['style'] });
+    sincronizar();
+})();
 
 
 // =====================================================

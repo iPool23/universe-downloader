@@ -286,85 +286,99 @@
               </button>
             </div>
 
-            <!-- Editor panel (shown after file selection) -->
+            <!-- Editor de una imagen: original y resultado superpuestos, con una línea que se arrastra
+                 para compararlos, y las opciones en un panel al costado. -->
             <div id="imgEditorPanel" style="display: none">
-
-              <!-- Side-by-side comparison -->
-              <div class="img-comparison">
-                <div class="img-comparison-side">
-                  <div class="img-comparison-label">
-                    <span>Original</span>
-                    <span id="imgOriginalInfo" class="img-info-badge"></span>
-                  </div>
-                  <div class="img-comparison-frame">
-                    <img id="imgPreviewOriginal" alt="Original" title="Imagen original antes de convertir" />
-                  </div>
-                </div>
-                <div class="img-comparison-divider">
-                  <i data-lucide="arrow-right" style="width: 20px; height: 20px;"></i>
-                </div>
-                <div class="img-comparison-side">
-                  <div class="img-comparison-label">
-                    <span>Resultado</span>
-                    <span id="imgResultInfo" class="img-info-badge"></span>
-                  </div>
-                  <div class="img-comparison-frame">
-                    <img id="imgPreviewResult" alt="Resultado" title="Imagen convertida" style="display: none" />
-                    <div id="imgResultPlaceholder" class="img-result-placeholder">
-                      <i data-lucide="image" style="width: 32px; height: 32px; opacity: 0.3;"></i>
-                      <span>Ajusta los controles para previsualizar</span>
+              <div class="sq">
+                <div class="sq-stage" id="sqStage">
+                  <div class="sq-layer">
+                    <div class="sq-canvas">
+                      <img id="imgPreviewOriginal" alt="Original" draggable="false" />
                     </div>
                   </div>
-                </div>
-              </div>
+                  <div class="sq-layer sq-after">
+                    <div class="sq-canvas">
+                      <img id="imgPreviewResult" alt="Resultado" draggable="false" style="display: none" />
+                    </div>
+                  </div>
 
-              <!-- Controls row -->
-              <div class="img-controls-grid">
-                <!-- Format selector -->
-                <div class="input-group" id="imgFormatGroup">
-                  <label>Formato destino:</label>
-                  <div class="format-buttons">
-                    <button class="format-btn img-format-btn active" data-imgformat="webp">WebP</button>
-                    <button class="format-btn img-format-btn" data-imgformat="jpg">JPG</button>
-                    <button class="format-btn img-format-btn" data-imgformat="png">PNG</button>
-                    <button class="format-btn img-format-btn" data-imgformat="avif">AVIF</button>
+                  <div class="sq-divider" id="sqDivider" role="slider" tabindex="0"
+                    aria-label="Comparar el original con el resultado" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+                    <span class="sq-handle"><i data-lucide="chevrons-left-right"></i></span>
+                  </div>
+
+                  <button class="sq-close" type="button" onclick="resetImageConverter()" title="Elegir otra imagen">
+                    <i data-lucide="x"></i>
+                  </button>
+
+                  <div class="sq-tag sq-tag-left">
+                    <b>Original</b>
+                    <span id="imgOriginalInfo"></span>
+                  </div>
+                  <div class="sq-tag sq-tag-right">
+                    <b>Resultado</b>
+                    <span id="imgResultInfo"></span>
+                  </div>
+                  <div id="imgResultPlaceholder" class="sq-busy" style="display: none">
+                    <span class="op-spinner"></span><span>Generando vista previa…</span>
+                  </div>
+
+                  <div class="sq-zoom">
+                    <button class="icon-btn sm" type="button" id="sqZoomOut" title="Alejar"><i data-lucide="minus"></i></button>
+                    <button class="sq-zoom-value" type="button" id="sqZoomValue" title="Ver a tamaño real">100 %</button>
+                    <button class="icon-btn sm" type="button" id="sqZoomIn" title="Acercar"><i data-lucide="plus"></i></button>
+                    <button class="icon-btn sm" type="button" id="sqZoomFit" title="Ajustar a la ventana"><i data-lucide="maximize"></i></button>
                   </div>
                 </div>
 
-                <!-- Resize controls -->
-                <div class="input-group">
-                  <label>Redimensionar:</label>
-                  <div class="img-resize-controls">
-                    <div class="img-resize-input">
-                      <span class="img-resize-label">W</span>
-                      <input type="number" id="imgWidth" min="1" max="10000" placeholder="Ancho" />
-                      <span class="img-resize-unit">px</span>
+                <aside class="sq-panel">
+                  <div class="sq-section" id="imgFormatGroup">
+                    <h3>Formato</h3>
+                    <div class="format-buttons">
+                      <button class="format-btn img-format-btn active" data-imgformat="webp">WebP</button>
+                      <button class="format-btn img-format-btn" data-imgformat="jpg">JPG</button>
+                      <button class="format-btn img-format-btn" data-imgformat="png">PNG</button>
+                      <button class="format-btn img-format-btn" data-imgformat="avif">AVIF</button>
                     </div>
-                    <button class="img-aspect-lock active" id="imgAspectLock" onclick="toggleAspectLock()" title="Mantener proporción">
-                      <i data-lucide="lock" style="width: 14px; height: 14px;"></i>
+                  </div>
+
+                  <div class="sq-section">
+                    <h3>Tamaño</h3>
+                    <div class="img-resize-controls">
+                      <div class="img-resize-input">
+                        <span class="img-resize-label">An</span>
+                        <input type="number" id="imgWidth" min="1" max="10000" placeholder="Ancho" />
+                        <span class="img-resize-unit">px</span>
+                      </div>
+                      <button class="img-aspect-lock active" id="imgAspectLock" onclick="toggleAspectLock()" title="Mantener la proporción">
+                        <i data-lucide="lock" style="width: 14px; height: 14px;"></i>
+                      </button>
+                      <div class="img-resize-input">
+                        <span class="img-resize-label">Al</span>
+                        <input type="number" id="imgHeight" min="1" max="10000" placeholder="Alto" />
+                        <span class="img-resize-unit">px</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="sq-section" id="imgQualityGroup">
+                    <h3>Calidad <span class="sq-value"><span id="imgQualityValue">85</span> %</span></h3>
+                    <input type="range" id="imgQualitySlider" min="10" max="100" value="85" class="quality-slider" />
+                    <div class="quality-hints">
+                      <span>Pesa menos</span>
+                      <span>Se ve mejor</span>
+                    </div>
+                  </div>
+
+                  <div class="sq-result">
+                    <div class="sq-saving" id="sqSaving">—</div>
+                    <div class="sq-sizes" id="sqSizes">Calculando…</div>
+                    <button class="download-btn" id="imgConvertBtn" onclick="convertImage()">
+                      Guardar WEBP
                     </button>
-                    <div class="img-resize-input">
-                      <span class="img-resize-label">H</span>
-                      <input type="number" id="imgHeight" min="1" max="10000" placeholder="Alto" />
-                      <span class="img-resize-unit">px</span>
-                    </div>
                   </div>
-                </div>
-
-                <!-- Quality slider -->
-                <div class="input-group" id="imgQualityGroup">
-                  <label>Calidad: <span id="imgQualityValue">85</span>%</label>
-                  <input type="range" id="imgQualitySlider" min="10" max="100" value="85" class="quality-slider" />
-                  <div class="quality-hints">
-                    <span>Menor tamaño</span>
-                    <span>Mayor calidad</span>
-                  </div>
-                </div>
+                </aside>
               </div>
-
-              <button class="download-btn" id="imgConvertBtn" onclick="convertImage()">
-                Convertir a WEBP
-              </button>
             </div>
           </div>
 
