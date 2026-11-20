@@ -35,6 +35,7 @@ ventana: no usan ni cierran la app que el dueño tenga abierta. Cada una explica
 | «Guardar el archivo tarda», «se come la memoria» | `python scripts/medir_entrega.py --mb 500` | Coste de las tres formas de llevar un archivo terminado a su destino |
 | «La descarga se demora» | `python scripts/medir_descarga.py URL --fin 00:20` | Escaneo, espera hasta el primer avance, duración de cada estado y total |
 | «La interfaz va lenta» | `node scripts/medir_ui.mjs PUERTO` | Carga de la página, peso de cada archivo, íconos y cambio de vista en la ventana real |
+| «El editor de imagen tarda», «convertir un lote tarda» | `python scripts/medir_vista_previa.py --imagen FOTO` (añade `--rafaga 3` para varios ajustes seguidos y el lote, `--ajustes` para comparar opciones del codificador) | En qué se va cada vista previa, cuánto tarda la última de una ráfaga, cuánto rato deja de responder el motor y cuánto cuesta cada opción de WebP, PNG y JPG en tiempo y peso |
 
 Las rutas son relativas a esta carpeta (`.claude/skills/optimizar-universe/`).
 

@@ -66,6 +66,22 @@ búscalo aquí. Cada entrada dice qué se midió y con qué script, para poder r
   Con el FFmpeg del sistema fuera del PATH, la app compilada usó el empaquetado para convertir a
   H.264, extraer un MP3 y descargar un tramo de 12 s exactos.
 
+### Convertir imágenes fuera del hilo del motor (20/11/2026)
+- **Problema medido:** `/api/convert-image` y `/api/convert-images-batch` convertían dentro del hilo
+  que atiende todas las peticiones. Con una foto real de 9 MP (`medir_vista_previa.py --rafaga 3`):
+  al mover un control tres veces seguidas, la última vista previa tardaba 1,9 s en WebP y 17,7 s en
+  PNG, porque esperaba a las dos anteriores, que ya nadie iba a ver; mientras tanto el motor no
+  respondía a nada (0,8 s en WebP, 4,1 s en PNG: el avance de una descarga se quedaba quieto); y un
+  lote de 8 fotos tardaba 6,4 s en WebP y 32 s en PNG, de una en una.
+- **Cambio:** las dos rutas convierten con `asyncio.to_thread`. El lote convierte hasta 4 fotos a la
+  vez y arma el zip al final, en el mismo orden en que llegaron.
+- **Resultado:** última de tres vistas previas 1,9 → 0,9 s (WebP) y 17,7 → 4,2 s (PNG); motor sin
+  responder 0,8–4,1 s → 20 ms; lote de 8 fotos 6,4 → 1,9 s (WebP) y 32 → 9,2 s (PNG).
+- **Comprobado:** el zip del lote sale igual que antes (nombres repetidos con `_1`, `errores.txt`
+  con las que fallan, sin restos en la carpeta de trabajo, 400 si ninguna sirve).
+- **Ojo:** el tope de 4 a la vez es por memoria (cada foto de 24 MP ocupa unos 70 MB abierta), no
+  por procesador. Pillow suelta el intérprete mientras codifica: por eso los hilos sí suman aquí.
+
 ## Pendiente (medido, con ganancia clara)
 
 _(nada pendiente al 20/11/2026: todo lo medido con ganancia clara está aplicado)_
@@ -85,6 +101,44 @@ _(nada pendiente al 20/11/2026: todo lo medido con ganancia clara está aplicado
 - **Por qué no:** no hay tiempo que ganar y obliga a regenerar el archivo cada vez que se use un
   ícono nuevo. Los 348 KB son el 0,06 % de la carpeta instalada.
 
+### Recordar la foto en el motor entre un ajuste y otro del editor
+- **Idea:** no volver a enviar ni a abrir la imagen cada vez que se mueve un control.
+- **Medido (20/11/2026, `medir_vista_previa.py`):** enviar y abrir la foto cuesta 60 ms a 2 MP y
+  240 ms a 24 MP, frente a 0,4–4,6 s de la petición entera en WebP y PNG (4–15 %). Solo en JPG es
+  una parte grande (40–70 %), pero de un total de 60–350 ms.
+- **Por qué no:** el tiempo lo pone el codificador, no el envío. Obligaría a guardar estado en el
+  motor (qué foto, cuándo soltarla) para ganar una décima.
+
+### Codificar más rápido (menos esfuerzo en WebP, PNG sin `optimize`)
+- **Medido (20/11/2026, `medir_vista_previa.py --ajustes`, tres fotos reales de 9 MP):** WebP
+  `method=2` en vez de 4 tarda un 62–70 % menos (0,7 → 0,24 s) y pesa un 4–8 % más; `method=3` no
+  cambia nada; `method=6` tarda un 15–27 % más por un 2–4 % menos. PNG con `compress_level=6` en
+  vez de `optimize=True` tarda un 62–89 % menos (0,6–4,2 → 0,2–0,5 s) y pesa un 5–11 % más.
+- **Por qué no (por ahora):** no es ganancia limpia, cambia el archivo que recibe el usuario, y el
+  editor existe para que pese menos. Es una decisión del dueño, no técnica. Si se quiere rapidez al
+  arrastrar sin perder peso, la vía es una vista previa rápida y la conversión con todo el esfuerzo
+  solo al guardar, avisando de que el peso mostrado es aproximado.
+
+### Módulos sueltos en vez de dentro del ejecutable (`noarchive=True`)
+- **Idea:** el ejecutable de 22 MB lleva los módulos de Python ya comprimidos con zlib y el
+  instalador no les saca nada. Sueltos, como `.pyc`, sí se comprimen.
+- **Medido (20/11/2026, las dos compilaciones del mismo código, instalador real de Inno Setup):**
+  instalador 114,6 → 106,0 MB (9 MB menos, 7,5 %). A cambio: 815 → 4370 archivos y 367 → 402 MB en
+  disco; instalar 7,1–10,8 → 9,8–13,5 s; primera apertura recién instalada 2,0–3,2 → 4,3–4,6 s (el
+  antivirus revisa cada archivo la primera vez). El arranque normal, ya en caché, no cambia (1,05 s).
+- **Por qué no:** en una red de 3,6 MB/s los 9 MB son 2,5 s menos de descarga, y se pierden entre 4
+  y 5 s entre instalar y abrir, en cada actualización. Solo compensaría con conexiones muy lentas.
+- **Para repetirlo:** `noarchive=True` en `youtubedpl.spec`, compilar con `--distpath` a otra
+  carpeta, y cronometrar la instalación con un `.iss` de prueba con otro `AppId` y
+  `Uninstallable=no`, para no tocar la instalación real.
+
+### Importaciones perezosas del motor
+- **Idea:** retrasar yt_dlp, pikepdf, pybalt y bs4, unos 200 ms al importar.
+- **Medido (20/11/2026, `medir_arranque.py --exe`, mediana de 5):** desde que la API se carga en un
+  hilo aparte, la interfaz está cargada a 1,05 s y las funciones listas a 1,13 s.
+- **Por qué no:** esas importaciones ya no están en el camino de la ventana. Lo máximo que se
+  ganaría son 80 ms que ocurren después de que la interfaz ya se ve.
+
 ### Optimizar el cambio de vista o el DOM
 - **Medido:** 10 ms por cambio, que es un cuadro de pantalla. 560 elementos.
 - **Por qué no:** ya está en el mínimo que se puede percibir.
@@ -94,14 +148,9 @@ _(nada pendiente al 20/11/2026: todo lo medido con ganancia clara está aplicado
 - **deno (29 MB del instalador, 18 %).** Alternativas: bajarlo la primera vez que se use YouTube, o
   QuickJS (≈1 MB), que yt-dlp admite pero resuelve los desafíos mucho más lento. No se puede validar
   desde esta red porque YouTube está bloqueado por IP: probar desde otra conexión antes de decidir.
-- **El ejecutable de 23 MB que no se comprime.** PyInstaller guarda los módulos con zlib y el
-  instalador ya no les saca nada. `noarchive=True` los dejaría como miles de `.pyc` sueltos, que sí
-  se comprimen, pero puede alargar la instalación y el arranque. Medir las dos cosas antes.
-- **Importaciones perezosas del motor.** yt_dlp, pikepdf, pybalt y bs4 suman unos 200 ms de 840 al
-  importar desde el código. Con la ventana ya creándose en paralelo (entrada 3) puede que dejen de
-  estar en el camino crítico: medir después de aplicarla.
 - **Descargas en paralelo dentro de un mismo video** (`concurrent_fragment_downloads`, o aria2c como
   descargador externo). Solo ayuda en formatos por fragmentos; hace falta un sitio que los use y no
   esté bloqueado para medirlo.
-- **Actualizaciones diferenciales.** Hoy cada actualización baja el instalador entero. Reducir el
-  instalador (entradas 4 y 5) es el primer paso; un parche por diferencias sería el siguiente.
+- **Actualizaciones diferenciales.** Hoy cada actualización baja el instalador entero (114,6 MB).
+  FFmpeg y deno, que casi nunca cambian, son más de la mitad: un parche por diferencias, o bajarlos
+  aparte solo cuando cambien, sería el siguiente paso. Es un desarrollo, no un ajuste.

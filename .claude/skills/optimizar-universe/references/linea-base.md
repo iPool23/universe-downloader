@@ -13,6 +13,8 @@ Segundos acumulados desde que se lanza la app. «Compilada» es `build_out\Unive
 | 2026-11-20 | 3.1.1 | compilada | 1,13 | 1,42 | 1,83 | Línea base |
 | 2026-11-20 | 3.1.1+ | código | 0,60 | 1,09 | — | Ventana y motor a la vez; API en segundo plano (funciones listas a 1,37 s) |
 | 2026-11-20 | 3.1.1+ | compilada | 0,69 | 1,10 | 1,32 | Ídem (funciones listas a 1,18 s) |
+| 2026-11-20 | 3.2.0 | compilada | 0,65 | 1,05 | — | Repetición, mediana de 5 (funciones listas a 1,13 s) |
+| 2026-11-20 | 3.2.0 | compilada, `noarchive` | 0,65 | 1,06 | — | Prueba descartada: igual en caliente; recién instalada abre en 4,3–4,6 s frente a 2,0–3,2 |
 
 Desglose de la línea base compilada: Python en marcha 0,21 · motor importado 0,67 · motor escuchando
 0,72 · ventana creada 0,72 · ventana visible 1,13 · interfaz cargada 1,42. La ventana no empezaba a
@@ -27,6 +29,7 @@ pydantic 64 ms, yt_dlp 55 ms, charset_normalizer 47 ms, pikepdf 28 ms, Cryptodom
 | --- | --- | --- | --- | --- |
 | 2026-11-20 | 3.1.1 | 591 MB | 157,2 MB | Línea base |
 | 2026-11-20 | 3.2.0 | 365 MB | 114,6 MB | FFmpeg compartido y sin numpy (estimación comprimida: 162 → 123 MB; el instalador real salió mejor) |
+| 2026-11-20 | 3.2.0, `noarchive` | 402 MB | 106,0 MB | Prueba descartada: 4370 archivos en vez de 815; instalar 9,8–13,5 s frente a 7,1–10,8 |
 
 Desglose de la línea base (sin comprimir → comprimido, % del instalador):
 
@@ -68,6 +71,24 @@ Medido con `urllib`; dentro de WebView2 el blob cuesta además la copia a disco 
 | 2026-11-20 | archive.org, tramo 0–20 s, 360p | 1,05 s (repetido: 1 ms) | 4,69 s | 4,69 s | Línea base. La descarga volvía a analizar el video (~1 s) |
 | 2026-11-20 | archive.org, tramo 0–20 s, 360p | 0,87 s | 3,47 s | 3,47 s | La descarga reutiliza el análisis del escaneo (mediana de 3) |
 | 2026-11-20 | YouTube | 3,53 s → «inicia sesión» | — | — | Bloqueo por IP, no medible desde esta red |
+
+## Editor de imagen (`medir_vista_previa.py`)
+
+Foto real de 9,2 MP (`C:\Windows\Web\Wallpaper\Windows\img0.jpg`, 3840×2400), calidad 85,
+`--rafaga 3` (tres ajustes con 300 ms entre uno y otro) y lote de 8 copias.
+
+| Fecha | Formato | Una vista previa | Última de 3 | Motor sin responder | Lote de 8 | Nota |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-11-20 | WebP | 0,90 s | 1,90 s | 0,78 s | 6,37 s | Línea base: se convertía en el hilo del motor |
+| 2026-11-20 | JPG | 0,08 s | 0,10 s | 0,08 s | 0,80 s | Ídem |
+| 2026-11-20 | PNG | 6,10 s | 17,71 s | 4,11 s | 32,13 s | Ídem |
+| 2026-11-20 | WebP | 0,80 s | 0,87 s | 0,02 s | 1,93 s | Conversión en hilos aparte; el lote, 4 a la vez |
+| 2026-11-20 | JPG | 0,10 s | 0,10 s | 0,02 s | 0,37 s | Ídem |
+| 2026-11-20 | PNG | 3,63 s | 4,23 s | 0,03 s | 9,16 s | Ídem |
+
+Reparto de una vista previa con fotos generadas (peor caso para el compresor), a WebP: 2 MP 0,41 s
+(codificar 86 %), 12 MP 2,26 s (93 %), 24 MP 4,65 s (95 %). Abrir la foto y enviarla suman entre 60
+y 240 ms: lo que cuesta es codificar.
 
 ## Interfaz (`medir_ui.mjs`)
 

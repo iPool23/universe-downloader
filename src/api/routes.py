@@ -584,7 +584,7 @@ async def convert_image(
     output_path = Path(DOWNLOADS_DIR) / f"img_output_{convert_id}.{output_ext}"
     
     try:
-        _convert_image_file(input_path, output_path, target_format, quality, width, height)
+        await asyncio.to_thread(_convert_image_file, input_path, output_path, target_format, quality, width, height)
     except Exception as e:
         # Cleanup on error
         if input_path.exists():
@@ -661,29 +661,44 @@ async def convert_images_batch(
 
     zip_path = Path(DOWNLOADS_DIR) / f"img_batch_{batch_id}.zip"
     success_count = 0
-    try:
+    turns = asyncio.Semaphore(max(1, min(4, os.cpu_count() or 1)))
+
+    def save_and_convert(file: UploadFile, input_path: Path, output_path: Path) -> None:
+        with open(input_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        _convert_image_file(input_path, output_path, target_format, quality, width, height)
+
+    async def convert_one(i: int, file: UploadFile) -> Tuple[Optional[Path], Optional[str]]:
+        input_ext = Path(file.filename or '').suffix.lower()
+        if input_ext not in valid_input_exts:
+            return None, f"{file.filename}: formato de imagen no soportado"
+
+        input_path = Path(DOWNLOADS_DIR) / f"img_batch_{batch_id}_in_{i}{input_ext}"
+        output_path = Path(DOWNLOADS_DIR) / f"img_batch_{batch_id}_out_{i}.{output_ext}"
+        temp_paths.extend([input_path, output_path])
+        try:
+            async with turns:
+                await asyncio.to_thread(save_and_convert, file, input_path, output_path)
+            return output_path, None
+        except Exception as e:
+            return None, f"{file.filename}: {str(e)}"
+
+    def write_zip(results: List[Tuple[Optional[Path], Optional[str]]]) -> int:
+        written = 0
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for i, file in enumerate(files):
-                input_ext = Path(file.filename or '').suffix.lower()
-                if input_ext not in valid_input_exts:
-                    errors.append(f"{file.filename}: formato de imagen no soportado")
+            for file, (output_path, error) in zip(files, results):
+                if error:
+                    errors.append(error)
                     continue
-
-                input_path = Path(DOWNLOADS_DIR) / f"img_batch_{batch_id}_in_{i}{input_ext}"
-                output_path = Path(DOWNLOADS_DIR) / f"img_batch_{batch_id}_out_{i}.{output_ext}"
-                temp_paths.extend([input_path, output_path])
-                try:
-                    with open(input_path, "wb") as buffer:
-                        shutil.copyfileobj(file.file, buffer)
-                    _convert_image_file(input_path, output_path, target_format, quality, width, height)
-                    arcname = unique_name(Path(file.filename).stem)
-                    zf.write(output_path, arcname=arcname)
-                    success_count += 1
-                except Exception as e:
-                    errors.append(f"{file.filename}: {str(e)}")
-
+                zf.write(output_path, arcname=unique_name(Path(file.filename).stem))
+                written += 1
             if errors:
                 zf.writestr("errores.txt", "\n".join(errors))
+        return written
+
+    try:
+        results = await asyncio.gather(*(convert_one(i, file) for i, file in enumerate(files)))
+        success_count = await asyncio.to_thread(write_zip, results)
     finally:
         for p in temp_paths:
             try:
