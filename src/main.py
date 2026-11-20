@@ -168,7 +168,9 @@ def run_window() -> int:
 
     if IS_WINDOWS:
         _windows_identity()
-        if _already_running():
+        # Una sola instancia de la app instalada. En desarrollo no: se puede probar el código con la
+        # app instalada abierta al lado.
+        if FROZEN and _already_running():
             return 0
 
     port = _free_port()

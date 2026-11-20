@@ -607,7 +607,12 @@ class DownloaderService:
                     'speed': clean_ansi(d.get('_speed_str', '')),
                     'eta': clean_ansi(d.get('_eta_str', '')),
                     'downloaded': clean_ansi(d.get('_downloaded_bytes_str', '')),
-                    'total': clean_ansi(d.get('_total_bytes_str', d.get('_total_bytes_estimate_str', '')))
+                    'total': clean_ansi(d.get('_total_bytes_str', d.get('_total_bytes_estimate_str', ''))),
+                    'downloaded_bytes': d.get('downloaded_bytes'),
+                    'total_bytes': d.get('total_bytes') or d.get('total_bytes_estimate'),
+                    'speed_bps': d.get('speed'),
+                    'eta_seconds': d.get('eta'),
+                    'phase': '',
                 })
             elif d['status'] == 'finished':
                 download_progress[unique_id].update({
@@ -628,18 +633,35 @@ class DownloaderService:
         
         # Agregar hook de progreso
         ydl_opts['progress_hooks'] = [progress_hook]
+
+        def postprocessor_hook(d):
+            if d.get('status') == 'started' and unique_id in download_progress:
+                download_progress[unique_id].update({'status': 'processing', 'phase': d.get('postprocessor') or ''})
+
+        ydl_opts['postprocessor_hooks'] = [postprocessor_hook]
         ydl_opts['logger'] = ProgressLogger(unique_id)
 
-        if start_time and end_time:
-            start_sec = self._parse_time(start_time)
-            end_sec = self._parse_time(end_time)
-            
+        # Recorte: basta con llenar uno de los dos campos. Sin inicio se parte del principio y sin
+        # fin se llega hasta el final. Antes hacían falta los dos, y con uno solo se descargaba el
+        # video completo sin avisar. Con un tramo pedido, yt-dlp usa FFmpeg para bajar solo esa parte.
+        start_sec = self._parse_time(start_time) if start_time else 0
+        end_sec = self._parse_time(end_time) if end_time else None
+        if end_time and end_sec <= start_sec:
+            message = "El fin del recorte tiene que ser mayor que el inicio."
+            download_progress[unique_id].update({'status': 'error', 'error': message})
+            raise FriendlyError(message)
+        if start_sec > 0 or end_sec is not None:
             def download_range_func(info_dict, ydl_instance):
-                return [{'start_time': start_sec, 'end_time': end_sec}]
-                
+                section = {'start_time': start_sec}
+                if end_sec is not None:
+                    section['end_time'] = end_sec
+                return [section]
+
             ydl_opts['download_ranges'] = download_range_func
             # Force re-encoding at cuts for precision and broad compatibility (fixes Facebook/others)
             ydl_opts['force_keyframes_at_cuts'] = True
+            # la interfaz lo usa para decir qué tramo se está bajando (FFmpeg no informa porcentaje)
+            download_progress[unique_id]['trim'] = {'start': start_sec, 'end': end_sec}
         
         # Descargar con reintentos para errores 403
         max_retries = 3

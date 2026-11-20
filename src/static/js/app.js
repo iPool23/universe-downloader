@@ -378,7 +378,7 @@ async function scanVideo() {
                     </select>
                 </div>
                 <div class="time-range-container">
-                    <span class="time-range-label"><i data-lucide="scissors" style="width: 14px; margin-bottom: -6px;"></i> Recortar (Opcional):</span>
+                    <span class="time-range-label"><i data-lucide="scissors" style="width: 14px; margin-bottom: -6px;"></i> Recortar (opcional)</span>
                     <div class="time-inputs">
                         <div class="time-input-group">
                             <label>Inicio ${timeLabel}</label>
@@ -390,6 +390,7 @@ async function scanVideo() {
                             <input type="text" id="endTime" placeholder="${formattedDuration}" onblur="formatTimeInput(this)" />
                         </div>
                     </div>
+                    <p class="time-range-hint">Para bajar solo una parte, escribe hasta dónde (y desde dónde, si no es desde el principio). Solo se descarga ese tramo. Si dejas los dos vacíos, se descarga el video completo.</p>
                 </div>
             `;
         videoInfo.style.display = 'block';
@@ -538,6 +539,18 @@ async function download() {
         return;
     }
 
+    // Recorte: se puede llenar solo el inicio, solo el fin o los dos.
+    const trimStart = parseClock(startTime);
+    const trimEnd = parseClock(endTime);
+    if ((startTime?.trim() && trimStart === null) || (endTime?.trim() && trimEnd === null)) {
+        showModal('error', 'alert-circle', 'Revisa el recorte', 'Escribe los tiempos como minutos:segundos, por ejemplo 01:30.');
+        return;
+    }
+    if (trimEnd !== null && trimEnd <= (trimStart || 0)) {
+        showModal('error', 'alert-circle', 'Revisa el recorte', 'El fin tiene que ser mayor que el inicio.');
+        return;
+    }
+
     const format = selectedFormat;
     const quality = selectedQuality;
     const audioQuality = selectedAudioQuality;
@@ -554,9 +567,74 @@ async function download() {
     enqueueTask(taskId, () => runDownloadTask(taskId, { url, format, startTime, endTime, quality, audioQuality }));
 }
 
+// ---- Progreso de la descarga en lenguaje llano (antes: «2.42MiB/s · ETA 08:38») ----
+
+function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '';
+    const units = ['KB', 'MB', 'GB'];
+    let value = bytes / 1024;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+    const text = (value >= 100 || unit === 0) ? String(Math.round(value)) : value.toFixed(1).replace('.', ',');
+    return `${text} ${units[unit]}`;
+}
+
+function formatRemaining(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return '';
+    const total = Math.round(seconds);
+    if (total < 60) return `${Math.max(total, 1)} s`;
+    const minutes = Math.floor(total / 60);
+    if (minutes < 60) return (minutes < 10 && total % 60) ? `${minutes} min ${total % 60} s` : `${minutes} min`;
+    return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
+function formatClock(seconds) {
+    const total = Math.max(0, Math.round(seconds));
+    const h = Math.floor(total / 3600);
+    const mm = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+    const ss = String(total % 60).padStart(2, '0');
+    return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+// "01:30" o "1:02:03" (o solo segundos) -> segundos; null si está vacío o no se entiende
+function parseClock(text) {
+    const value = (text || '').trim();
+    if (!value) return null;
+    const parts = value.split(':').map(Number);
+    if (parts.length > 3 || parts.some((n) => !Number.isFinite(n) || n < 0)) return null;
+    return parts.reduce((acc, n) => acc * 60 + n, 0);
+}
+
+function describeTrim(trim) {
+    if (!trim) return '';
+    if (trim.end === null || trim.end === undefined) return `desde ${formatClock(trim.start)}`;
+    return `de ${formatClock(trim.start)} a ${formatClock(trim.end)}`;
+}
+
+function describeDownload(progress) {
+    const trim = describeTrim(progress.trim);
+    if (progress.status === 'downloading') {
+        // reintentos y avisos que el motor ya manda redactados
+        if (typeof progress.speed === 'string' && /reintent|cobalt/i.test(progress.speed)) return progress.speed;
+        const done = formatBytes(progress.downloaded_bytes);
+        const total = formatBytes(progress.total_bytes);
+        const left = formatRemaining(progress.eta_seconds);
+        if (!done && trim) return `Descargando solo ${trim}…`;
+        const size = (done && total) ? `${done} de ${total}` : done;
+        // lo que más importa va primero, por si la tarjeta recorta el texto
+        return left ? [`Faltan ${left}`, size].filter(Boolean).join(' · ') : ['Descargando', size].filter(Boolean).join(' · ');
+    }
+    if (progress.status === 'processing') {
+        if (progress.phase === 'Merger') return 'Uniendo video y audio…';
+        if (progress.phase === 'ExtractAudio') return 'Convirtiendo a MP3…';
+        return 'Preparando el archivo…';
+    }
+    return trim ? `Descargando solo ${trim}…` : 'Preparando la descarga…';
+}
+
 async function runDownloadTask(taskId, { url, format, startTime, endTime, quality, audioQuality }) {
     try {
-        updateTaskCard(taskId, { status: 'Iniciando descarga...' });
+        updateTaskCard(taskId, { status: 'Preparando la descarga…' });
         const startResponse = await fetch('/api/download/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -591,15 +669,12 @@ async function runDownloadTask(taskId, { url, format, startTime, endTime, qualit
             }
 
             const percent = Math.round(progress.percent || 0);
-            let status;
-            if (progress.status === 'downloading') {
-                status = [progress.speed, progress.eta ? `ETA ${progress.eta}` : ''].filter(Boolean).join(' · ') || 'Descargando...';
-            } else if (progress.status === 'processing') {
-                status = 'Procesando video...';
-            } else {
-                status = 'Iniciando descarga...';
-            }
-            updateTaskCard(taskId, { percent, status });
+            // Un tramo recortado lo baja FFmpeg, que no informa porcentaje: la barra se mueve sola en
+            // vez de quedarse en 0 % como si no pasara nada.
+            const noPercent = Boolean(progress.trim) && percent === 0
+                && (progress.status === 'starting' || progress.status === 'downloading');
+            document.getElementById(`task-${taskId}`)?.classList.toggle('indeterminate', noPercent);
+            updateTaskCard(taskId, { percent, status: describeDownload(progress) });
 
             if (progress.status === 'completed') {
                 completed = true;
@@ -633,15 +708,17 @@ async function runDownloadTask(taskId, { url, format, startTime, endTime, qualit
                 window.URL.revokeObjectURL(downloadUrl);
                 a.remove();
 
-                updateTaskCard(taskId, { percent: 100, status: 'Descargado ✓', done: true });
+                document.getElementById(`task-${taskId}`)?.classList.remove('indeterminate');
+                updateTaskCard(taskId, { percent: 100, status: 'Listo: elige dónde guardarlo', done: true });
                 removeTaskCard(taskId, 4000);
             } else if (progress.status === 'error') {
                 throw new Error(progress.error || 'Error durante la descarga');
             }
         }
     } catch (error) {
+        document.getElementById(`task-${taskId}`)?.classList.remove('indeterminate');
         updateTaskCard(taskId, { status: error.message, error: true });
-        removeTaskCard(taskId, 6000);
+        removeTaskCard(taskId, 15000);   // tiempo para leer por qué falló; la X la cierra antes
     }
 }
 
@@ -723,7 +800,7 @@ async function runConvertTask(taskId, file) {
         removeTaskCard(taskId, 4000);
     } catch (error) {
         updateTaskCard(taskId, { status: error.message, error: true });
-        removeTaskCard(taskId, 6000);
+        removeTaskCard(taskId, 15000);   // tiempo para leer por qué falló; la X la cierra antes
     }
 }
 
@@ -938,7 +1015,7 @@ async function runExtractAudioTask(taskId, file) {
         removeTaskCard(taskId, 4000);
     } catch (error) {
         updateTaskCard(taskId, { status: error.message, error: true });
-        removeTaskCard(taskId, 6000);
+        removeTaskCard(taskId, 15000);   // tiempo para leer por qué falló; la X la cierra antes
     }
 }
 
