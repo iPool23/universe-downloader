@@ -37,6 +37,9 @@ if LITE_BUILD:
         'safetensors',
         'src.services.outpainting_service',
         'src.services.rembg_service',
+        # Solo lo usan los servicios de IA. Entraba arrastrado por una importación opcional de
+        # Pillow (PIL/_typing.py, protegida con try/except): 26 MB en disco sin que nada lo use.
+        'numpy',
     ]
 
 resource_bin_dir = Path('mac') / 'bin' if IS_MAC else Path('bin')
@@ -46,10 +49,23 @@ exe_icon = None if IS_MAC else (str(Path('public/imgs/favicon.ico')) if Path('pu
 # FFmpeg y, si está, deno: el motor de JavaScript que yt-dlp necesita para YouTube en las PCs
 # que no tienen Node instalado (scripts/setup_deno.py lo deja en bin/).
 binaries = []
+bundled_tools = []
 for binary_name in ('ffmpeg', 'ffprobe', 'deno'):
     binary_path = resource_bin_dir / f'{binary_name}{exe_suffix}'
     if binary_path.exists():
-        binaries.append((str(binary_path), 'bin'))
+        bundled_tools.append((str(binary_path), 'bin'))
+# FFmpeg «shared» (scripts/setup_ffmpeg.py): los dos ejecutables comparten estas bibliotecas, que por
+# eso van una sola vez. Solo las de bin/ mismo: bin/estatico/ guarda la compilación anterior.
+if IS_WIN:
+    for dll in sorted(resource_bin_dir.glob('*.dll')):
+        bundled_tools.append((str(dll), 'bin'))
+
+binaries = bundled_tools
+# Nombres de las DLL de FFmpeg que van en bin/. PyInstaller analiza de qué depende ffmpeg.exe y copia
+# esas mismas DLL OTRA VEZ en la raíz de _internal (también si se declaran como datos: las
+# reclasifica). Medido: la carpeta pasaba de 370 a 551 MB. Las copias de la raíz se quitan después
+# del análisis, más abajo; ffmpeg.exe usa las que tiene al lado, en bin/.
+ffmpeg_dll_names = {dll.name.lower() for dll in resource_bin_dir.glob('*.dll')} if IS_WIN else set()
 
 icon_path = Path('mac') / 'icon.icns' if IS_MAC else Path('public/imgs/favicon.ico')
 icon_file = str(icon_path) if icon_path.exists() else None
@@ -108,6 +124,11 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+# Fuera las copias de las DLL de FFmpeg que el análisis dejó en la raíz (ver arriba). Cada entrada es
+# (ruta de destino, origen, tipo): las de la raíz no llevan carpeta; las de bin/ se conservan.
+if ffmpeg_dll_names:
+    a.binaries = [entry for entry in a.binaries if entry[0].lower() not in ffmpeg_dll_names]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

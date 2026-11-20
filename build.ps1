@@ -31,9 +31,13 @@ function Self-Test($exe) {
 }
 
 Write-Host "1/4 Herramientas que van dentro de la app (FFmpeg y deno)..."
-if (-not ((Test-Path bin\ffmpeg.exe) -and (Test-Path bin\ffprobe.exe))) {
+# FFmpeg «shared»: ejecutables pequeños + DLL una sola vez. Si bin\ tiene la compilación estática
+# de antes (ffmpeg.exe de ~200 MB), setup_ffmpeg.py la aparta en bin\estatico y baja la compartida.
+$ffmpegOk = (Test-Path bin\ffmpeg.exe) -and (Test-Path bin\ffprobe.exe) -and
+            ((Get-Item bin\ffmpeg.exe).Length -lt 50MB) -and (Test-Path bin\avcodec-*.dll)
+if (-not $ffmpegOk) {
     python scripts\setup_ffmpeg.py
-    if (-not (Test-Path bin\ffmpeg.exe)) { throw "No se pudo obtener FFmpeg (scripts\setup_ffmpeg.py)" }
+    if ($LASTEXITCODE -ne 0) { throw "No se pudo obtener FFmpeg (scripts\setup_ffmpeg.py)" }
 }
 if (-not (Test-Path bin\deno.exe)) {
     python scripts\setup_deno.py

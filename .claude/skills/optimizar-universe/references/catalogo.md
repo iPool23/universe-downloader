@@ -49,22 +49,26 @@ búscalo aquí. Cada entrada dice qué se midió y con qué script, para poder r
 - **Ojo:** `window.events.loaded` salta dos veces (pantalla de inicio e interfaz). Y cualquier código
   que use `src.api.routes` justo después de importar `src.app` debe esperar a `app.api_ready`.
 
+### FFmpeg una sola vez y sin numpy en la edición ligera (20/11/2026)
+- **Problema medido:** `ffmpeg.exe` y `ffprobe.exe` estáticos sumaban 386 MB y 87 MB del
+  instalador (54 %), con las mismas bibliotecas dentro de cada uno. `numpy` ocupaba 26 MB sin que
+  nada de la edición ligera lo usara (`medir_tamano.py --lzma`).
+- **Cambio:** `scripts/setup_ffmpeg.py` baja la compilación «shared» de BtbN (ejecutables de menos
+  de 1 MB y las bibliotecas una vez, sin `ffplay.exe`) y aparta la estática en `bin/estatico/`.
+  `youtubedpl.spec` empaqueta `bin/*.dll` y añade `numpy` a `excluded_modules` en la ligera.
+- **Trampa que costó dos compilaciones:** PyInstaller analiza de qué depende `ffmpeg.exe` y copia
+  esas DLL otra vez en la raíz de `_internal`, también si se declaran como datos. La carpeta pasó a
+  551 MB con FFmpeg duplicado. El spec quita esas copias de `a.binaries` después del análisis. Si
+  cambia la versión de FFmpeg, vuelve a medir: que no haya `av*.dll` sueltas en la raíz.
+- **Resultado:** carpeta compilada 591 → 365 MB; comprimida (estimación) 162 → 123 MB. FFmpeg
+  ahorró 33 MB de instalador, no los 44 previstos: la biblioteca compartida se comprime peor.
+- **Comprobado:** mismos 7 codificadores que antes (libx264, libx265, libmp3lame, aac, libwebp…).
+  Con el FFmpeg del sistema fuera del PATH, la app compilada usó el empaquetado para convertir a
+  H.264, extraer un MP3 y descargar un tramo de 12 s exactos.
+
 ## Pendiente (medido, con ganancia clara)
 
-Ordenado por lo que más nota el dueño.
-
-### 4. FFmpeg una sola vez
-- **Problema medido:** `ffmpeg.exe` y `ffprobe.exe` estáticos suman 386 MB y 87 MB del instalador
-  (54 %), con el mismo código dentro de cada uno (`medir_tamano.py --lzma`).
-- **Cambio:** usar la compilación «shared» del mismo proveedor (BtbN gpl-shared): dos ejecutables
-  pequeños y las bibliotecas una sola vez. Mismos códecs.
-- **Se espera:** ~44 MB menos de instalador y ~190 MB menos en disco.
-
-### 5. Sacar numpy de la edición ligera
-- **Problema medido:** 25,9 MB en disco, 5,1 MB del instalador. Lo arrastra una importación opcional
-  de Pillow (`PIL/_typing.py`, protegida con try/except); solo lo usan los servicios de IA.
-- **Cambio:** añadir `numpy` a `excluded_modules` cuando `UNIVERSE_LITE_BUILD=1`.
-- **Se espera:** ~5 MB menos de instalador. Comprobar conversión de imágenes y PDF después.
+_(nada pendiente al 20/11/2026: todo lo medido con ganancia clara está aplicado)_
 
 ## Descartado (medido, no compensa)
 

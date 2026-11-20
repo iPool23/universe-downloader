@@ -26,6 +26,7 @@ pydantic 64 ms, yt_dlp 55 ms, charset_normalizer 47 ms, pikepdf 28 ms, Cryptodom
 | Fecha | Versión | Carpeta compilada | Instalador | Nota |
 | --- | --- | --- | --- | --- |
 | 2026-11-20 | 3.1.1 | 591 MB | 157,2 MB | Línea base |
+| 2026-11-20 | 3.1.1+ | 365 MB | (ver fila siguiente) | FFmpeg compartido y sin numpy. Comprimido estimado: 162 → 123 MB |
 
 Desglose de la línea base (sin comprimir → comprimido, % del instalador):
 
