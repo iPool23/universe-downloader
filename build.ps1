@@ -4,10 +4,12 @@
 #             ligera, que es la que se publica: las de IA pesan varios GB.
 #   -Install: además instala el resultado en esta PC (silencioso).
 #   -Fast:    compresión rápida del instalador, para probar (sale más grande; no es para publicar).
+#   -NoSetup: solo compila y comprueba build_out\UniverseDownloader (1-2 min), sin armar el instalador.
+#             Para medir o probar la app compilada mientras se optimiza.
 # El instalador es por usuario (sin administrador): %LOCALAPPDATA%\Programs\UniverseDownloader, accesos
 # directos en escritorio y menú Inicio, y desinstalador en "Aplicaciones instaladas".
 # La versión sale de APP_VERSION en src\version.py.
-param([switch]$Full, [switch]$Install, [switch]$Fast)
+param([switch]$Full, [switch]$Install, [switch]$Fast, [switch]$NoSetup)
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
@@ -54,6 +56,7 @@ if (-not (Test-Path $exe)) { throw "No se generó $exe" }
 Write-Host "3/4 Comprobando que la app compilada arranca..."
 Self-Test $exe
 
+if ($NoSetup) { Write-Host "4/4 (sin instalador) Compilada en: $exe"; exit 0 }
 Write-Host "4/4 Armando el instalador..."
 New-Item -ItemType Directory -Force dist | Out-Null
 $isccArgs = @("installer.iss", "/Qp", "/DMyAppVersion=$version", "/DSourceDir=$out\UniverseDownloader")

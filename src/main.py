@@ -24,11 +24,35 @@ from pathlib import Path
 IS_MAC = sys.platform == 'darwin'
 IS_WINDOWS = sys.platform == 'win32'
 
+# ---- Marcas de tiempo del arranque (apagadas salvo UNIVERSE_TIMING=1) ----
+# Las usa .claude/skills/optimizar-universe/scripts/medir_arranque.py: lanza la app con
+# UNIVERSE_TIMING_T0=<instante en que la lanzó>, la app anota cuánto tarda cada fase y, con
+# UNIVERSE_TIMING_EXIT=1, se cierra sola cuando la interfaz termina de cargar.
+_TIMING = os.environ.get("UNIVERSE_TIMING") == "1"
+_T0 = float(os.environ.get("UNIVERSE_TIMING_T0") or time.time())
+_marks: list = []
+
+
+def _mark(name: str):
+    if _TIMING:
+        _marks.append([name, round(time.time() - _T0, 3)])
+
+
+def _dump_marks(path):
+    if _TIMING:
+        import json
+        Path(path).write_text(json.dumps(_marks, ensure_ascii=False), encoding="utf-8")
+
+
+_mark("python en marcha")
+
 # Agregar el directorio raíz al path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import BASE_DIR, DATA_DIR, FROZEN, HOST, PORT  # noqa: E402
 from src.version import APP_ID, APP_NAME, APP_VERSION  # noqa: E402
+
+_mark("configuración importada")
 
 LOG_FILE = DATA_DIR / "app.log"
 LOG_MAX_BYTES = 2 * 1024 * 1024
@@ -89,6 +113,7 @@ def start_server(port: int, timeout: float = 60.0):
     """Arranca uvicorn en un hilo y espera a que acepte conexiones. Devuelve el servidor."""
     import uvicorn
     from src.app import app
+    _mark("motor importado")
 
     server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=port, log_level="error"))
     threading.Thread(target=server.run, daemon=True, name="motor").start()
@@ -97,6 +122,7 @@ def start_server(port: int, timeout: float = 60.0):
         if time.time() > deadline:
             raise RuntimeError("el motor local no arrancó a tiempo")
         time.sleep(0.05)
+    _mark("motor escuchando")
     return server
 
 
@@ -210,6 +236,7 @@ def _system_dark() -> bool:
 def run_window() -> int:
     """La app como ventana propia. Al cerrarla termina todo el proceso."""
     import webview
+    _mark("webview importado")
 
     if IS_WINDOWS:
         _windows_identity()
@@ -231,15 +258,26 @@ def run_window() -> int:
         APP_NAME, f"http://{HOST}:{port}/", width=1180, height=780, min_size=(900, 600),
         background_color="#1b1b1a" if _system_dark() else "#f6f6f4", text_select=True,
     )
+    _mark("ventana creada")
 
     def shown():
+        _mark("ventana visible")
         if IS_WINDOWS:
             try:
                 _big_icon(int(window.native.Handle.ToInt64()))
             except Exception:
                 logging.getLogger("ventana").exception("sin acceso a la ventana nativa")
 
+    def loaded():
+        # la página ya pintó: fin del arranque para quien lo mide
+        if _TIMING and not any(m[0] == "interfaz cargada" for m in _marks):
+            _mark("interfaz cargada")
+            _dump_marks(os.environ.get("UNIVERSE_TIMING_OUT") or DATA_DIR / "arranque.json")
+            if os.environ.get("UNIVERSE_TIMING_EXIT") == "1":
+                os._exit(0)
+
     window.events.shown += shown
+    window.events.loaded += loaded
     # private_mode=False + carpeta propia: el tema elegido (localStorage) se conserva entre sesiones
     webview.start(private_mode=False, storage_path=str(DATA_DIR / "interfaz"),
                   debug=os.environ.get("UNIVERSE_UI_DEBUG") == "1")
