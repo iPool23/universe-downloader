@@ -113,19 +113,64 @@ def _windows_identity():
         pass
 
 
+_instance_mutex = None   # el candado vive mientras viva el proceso
+
+
 def _already_running() -> bool:
-    """Una sola instancia: si ya hay una abierta, se trae al frente y esta termina."""
+    """Una sola instancia: si ya hay una abierta, se trae al frente y esta termina.
+
+    Abrir la app dos veces dejaba dos motores en segundo plano. El candado es un mutex con nombre
+    de Windows: lo crea la primera instancia y las siguientes lo encuentran ya creado. La app
+    instalada y el código en desarrollo usan candados distintos, para no bloquearse entre sí.
+    UNIVERSE_ALLOW_MULTIPLE=1 lo desactiva (solo para pruebas).
+    """
+    global _instance_mutex
+    if os.environ.get("UNIVERSE_ALLOW_MULTIPLE") == "1":
+        return False
     try:
-        from ctypes import windll
-        kernel32, user32 = windll.kernel32, windll.user32
-        kernel32.CreateMutexW(None, False, "Local\\UniverseDownloader.SingleInstance")
-        if kernel32.GetLastError() != 183:   # ERROR_ALREADY_EXISTS
+        import ctypes
+        from ctypes import wintypes
+
+        # use_last_error: el código de error se lee del mismo hilo y llamada; con windll.kernel32
+        # .GetLastError() otra llamada intermedia puede pisarlo y el candado fallaría sin avisar.
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateMutexW.restype = wintypes.HANDLE
+        kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+        name = "Local\\UniverseDownloader.SingleInstance" + ("" if FROZEN else ".Dev")
+        ctypes.set_last_error(0)
+        _instance_mutex = kernel32.CreateMutexW(None, False, name)
+        if ctypes.get_last_error() != 183:   # ERROR_ALREADY_EXISTS
             return False
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.FindWindowW.restype = wintypes.HWND
+        user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
         hwnd = user32.FindWindowW(None, APP_NAME)
         if hwnd:
-            user32.ShowWindow(hwnd, 9)        # SW_RESTORE
-            user32.SetForegroundWindow(hwnd)
+            window = wintypes.HWND(hwnd)
+            user32.GetForegroundWindow.restype = wintypes.HWND
+            if user32.IsIconic(window):
+                user32.ShowWindow(window, 9)   # SW_RESTORE: estaba minimizada
+            user32.SetForegroundWindow(window)
+            # Windows puede negarle el foco a un proceso que no viene de un clic del usuario:
+            # se intenta por otra vía y, si tampoco, la app parpadea en la barra de tareas.
+            if user32.GetForegroundWindow() != hwnd:
+                user32.SwitchToThisWindow(window, True)
+            if user32.GetForegroundWindow() != hwnd:
+                user32.FlashWindow(window, True)
         return True
+    except Exception:
+        logging.getLogger("ventana").exception("no se pudo comprobar si la app ya estaba abierta")
+        return False
+
+
+def _engine_alive(port: int) -> bool:
+    """Hay un motor de la app respondiendo en ese puerto (modo navegador)."""
+    import json
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://{HOST}:{port}/health", timeout=1.5) as r:
+            return json.load(r).get("status") == "ok"
     except Exception:
         return False
 
@@ -168,9 +213,7 @@ def run_window() -> int:
 
     if IS_WINDOWS:
         _windows_identity()
-        # Una sola instancia de la app instalada. En desarrollo no: se puede probar el código con la
-        # app instalada abierta al lado.
-        if FROZEN and _already_running():
+        if _already_running():
             return 0
 
     port = _free_port()
@@ -213,6 +256,11 @@ def run_browser() -> int:
     from src.app import app
 
     url = f'http://{HOST}:{PORT}'
+    # Una sola instancia también aquí: si el motor ya responde, se abre esa en el navegador y esta
+    # termina. Antes cada apertura dejaba otro proceso con su ícono en la bandeja.
+    if os.environ.get("UNIVERSE_ALLOW_MULTIPLE") != "1" and _engine_alive(PORT):
+        webbrowser.open(url)
+        return 0
     threading.Thread(target=lambda: (time.sleep(1.5), webbrowser.open(url)), daemon=True).start()
 
     icon = None

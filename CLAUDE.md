@@ -39,6 +39,8 @@ python src/main.py --selftest
 
 There is no configured test runner (no pytest/tox config). `test_rembg.py` at the repo root is a standalone manual script (`python test_rembg.py`), not a pytest suite — it exercises `RembgService` directly.
 
+The app is single-instance (the owner asked for it: opening it twice used to leave a second engine running in the background). `main._already_running()` takes a named Windows mutex; a second launch restores and focuses the existing window — or flashes it in the taskbar when Windows denies focus — and exits. The installed app and a run from source use different mutex names, so they do not block each other, and browser mode gets the same guarantee by probing `/health` on its port. Set `UNIVERSE_ALLOW_MULTIPLE=1` only when a test really needs two instances.
+
 To inspect the real window from a terminal, set `UNIVERSE_UI_DEBUG_PORT=<port>` before `python src/main.py`: WebView2 then exposes Chrome DevTools Protocol on that port (screenshots, `Runtime.evaluate`). Saving a finished file opens the native "Save as" dialog, which CDP cannot click — exercise downloads through the API endpoints instead.
 
 ### Building and releasing (Windows)
