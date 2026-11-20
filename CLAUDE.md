@@ -55,6 +55,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 powershell -ExecutionPolicy Bypass -File release.ps1 [-Notes "what changed"] [-SkipBuild]
 ```
 
+- **Do not publish a release for every change.** The owner iterates in batches: a requested fix or feature ends as a commit on `desktop`, tested from source or by installing a local build on this PC (`build.ps1 -Fast -Install`). Run `release.ps1` — which also pushes the branch — only when he explicitly asks to publish.
 - The version lives in one place: `APP_VERSION` in `src/version.py`. `build.ps1`, `release.ps1`, the updater and the sidebar all read it. To ship a new version: bump it, commit and push to `desktop`, run `release.ps1` (it refuses to run from any other branch).
 - `build.ps1` makes sure `bin/` has FFmpeg (`scripts/setup_ffmpeg.py`) and deno (`scripts/setup_deno.py`), runs PyInstaller against `youtubedpl.spec` into `build_out/` (onedir: `UniverseDownloader.exe` + `_internal/`), runs the built exe with `--selftest` and requires `Listo` in `%LOCALAPPDATA%\UniverseDownloader\selftest.txt`, then compiles `installer.iss` with Inno Setup 6.
 - `installer.iss` installs per user (no admin) into `%LOCALAPPDATA%\Programs\UniverseDownloader`. Never change its `AppId`: that is what makes a new version upgrade the installed one in place. It wipes `{app}\_internal` on every install, so nothing the user must keep can live in the program folder (see `DATA_DIR` below).
