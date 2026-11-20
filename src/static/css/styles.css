@@ -378,6 +378,8 @@ select option { background: var(--panel); color: var(--text); }
 .sq-value { font-weight: 500; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .sq-panel .format-buttons { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; }
 .sq-panel .format-btn { padding: 0 6px; }
+/* sin las flechitas del campo numérico: quitan sitio a las cifras y aquí no hacen falta */
+.sq-panel input[type="number"]::-webkit-inner-spin-button, .sq-panel input[type="number"]::-webkit-outer-spin-button { appearance: none; margin: 0; }
 .sq-result { margin-top: auto; padding: 14px 10px 8px; display: flex; flex-direction: column; gap: 2px; }
 .sq-saving { font-size: 30px; font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-3); }
 .sq-saving.smaller { color: var(--ok); }
@@ -388,12 +390,23 @@ select option { background: var(--panel); color: var(--text); }
 /* Ventana estrecha (el mínimo es 900 px): el panel pasa debajo, en una sola fila, y la imagen se
    queda con todo el ancho. */
 @media (max-width: 1040px) {
-  .sq { grid-template-columns: 1fr; grid-template-rows: minmax(220px, 1fr) auto; }
-  .sq-panel { flex-direction: row; align-items: stretch; overflow: visible; gap: 0; }
-  .sq-section { flex: 1 1 0; border-bottom: 0; border-right: 1px solid var(--line); padding: 8px 12px 10px; }
-  .sq-result { flex: 0 0 190px; margin-top: 0; padding: 8px 12px; justify-content: center; }
-  .sq-saving { font-size: 22px; }
-  .sq-sizes { margin-bottom: 8px; }
+  /* minmax(0, …): sin eso la columna toma el ancho mínimo del panel y la vista se sale por la derecha */
+  .sq { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(180px, 1fr) auto; gap: 10px; }
+  .sq-panel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; overflow: visible; padding: 2px 6px; }
+  .sq-section { border-bottom: 0; border-right: 1px solid var(--line); padding: 8px 10px 10px; }
+  .sq-section h3 { margin-bottom: 6px; }
+  #imgQualityGroup { border-right: 0; }
+  .sq-panel .format-btn { padding: 0 2px; font-size: 13px; }
+  .sq-panel { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 0.9fr); }
+  .sq-panel .img-resize-unit { display: none; }   /* «px» sobra cuando el campo es angosto */
+  .sq-panel .img-resize-controls { gap: 4px; }
+  .sq-panel .img-resize-input { padding: 0 6px; gap: 3px; }
+  .sq-panel .img-resize-label { font-size: 11px; }
+  .sq-panel .img-aspect-lock { width: 24px; }
+  .sq-result { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 12px; margin: 0; padding: 8px 10px; border-top: 1px solid var(--line); }
+  .sq-saving { font-size: 22px; white-space: nowrap; }
+  .sq-sizes { flex: 1; min-width: 0; margin: 0; min-height: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sq-result .download-btn { width: auto; min-width: 170px; height: 36px; }
 }
 
 /* ---------- outpaint ---------- */
