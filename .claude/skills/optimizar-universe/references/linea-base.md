@@ -26,7 +26,7 @@ pydantic 64 ms, yt_dlp 55 ms, charset_normalizer 47 ms, pikepdf 28 ms, Cryptodom
 | Fecha | Versión | Carpeta compilada | Instalador | Nota |
 | --- | --- | --- | --- | --- |
 | 2026-11-20 | 3.1.1 | 591 MB | 157,2 MB | Línea base |
-| 2026-11-20 | 3.1.1+ | 365 MB | (ver fila siguiente) | FFmpeg compartido y sin numpy. Comprimido estimado: 162 → 123 MB |
+| 2026-11-20 | 3.2.0 | 365 MB | 114,6 MB | FFmpeg compartido y sin numpy (estimación comprimida: 162 → 123 MB; el instalador real salió mejor) |
 
 Desglose de la línea base (sin comprimir → comprimido, % del instalador):
 
@@ -44,6 +44,11 @@ Desglose de la línea base (sin comprimir → comprimido, % del instalador):
 bibliotecas. El ejecutable de la app casi no se comprime porque PyInstaller ya guarda los módulos
 comprimidos con zlib. `numpy` entra arrastrado por una importación opcional de Pillow; nada de la
 edición ligera lo usa.
+
+Desglose tras el cambio (sin comprimir → comprimido estimado): `bin/avcodec-63.dll` 117,3 → 31,5 ·
+`bin/deno.exe` 93,5 → 29,1 · `bin/avfilter-12.dll` 36,4 → 12,0 · `bin/avformat-63.dll` 22,2 → 8,0 ·
+`UniverseDownloader.exe` 21,6 → 21,2 · `PIL` 12,7 → 3,4. Lo que más pesa ahora es deno (24 %) y el
+ejecutable que no se comprime (17 %): ver «Ideas sin medir» en el catálogo.
 
 ## Entrega de archivos (`medir_entrega.py --mb 500`)
 

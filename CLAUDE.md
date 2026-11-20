@@ -21,6 +21,16 @@ Features flow one way, `main` → `desktop`: to bring new web work into the app,
 - **`views/index.html` and `static/css/styles.css` are not merged line by line** — the desktop versions are a different shell and design. Rebuild `index.html` from the web one (take its views, modals and `#taskManager`; wrap them in the desktop shell; add the PDF view, which only exists here; drop SEO markup and `<h2>` titles) and keep the desktop stylesheet, adding styles for any new class the web markup or `app.js` introduces.
 - `app.js`, `routes.py`, `app.py` merge normally; keep the desktop section at the end of `app.js` and the update endpoints at the end of `routes.py`.
 
+## Performance work: measure first
+
+Before optimizing anything — or claiming a change is faster or lighter — use the project skill
+`.claude/skills/optimizar-universe/`. It has scripts that measure startup, build size, file delivery,
+downloads and the UI without touching the owner's running app, a dated baseline
+(`references/linea-base.md`) and a catalog of what was applied, what was measured and rejected, and
+what is untested (`references/catalogo.md`). Two plausible ideas were wrong when measured on
+2026-11-20 (trimming the icon bundle; "fast" trimming without re-encoding), and one fix made things
+worse until it was measured (FFmpeg DLLs duplicated by PyInstaller), so do not skip it.
+
 ## Common commands
 
 ```bash
@@ -57,7 +67,8 @@ powershell -ExecutionPolicy Bypass -File release.ps1 [-Notes "what changed"] [-S
 
 - **Do not publish a release for every change.** The owner iterates in batches: a requested fix or feature ends as a commit on `desktop`, tested from source or by installing a local build on this PC (`build.ps1 -Fast -Install`). Run `release.ps1` — which also pushes the branch — only when he explicitly asks to publish.
 - The version lives in one place: `APP_VERSION` in `src/version.py`. `build.ps1`, `release.ps1`, the updater and the sidebar all read it. To ship a new version: bump it, commit and push to `desktop`, run `release.ps1` (it refuses to run from any other branch).
-- `build.ps1` makes sure `bin/` has FFmpeg (`scripts/setup_ffmpeg.py`) and deno (`scripts/setup_deno.py`), runs PyInstaller against `youtubedpl.spec` into `build_out/` (onedir: `UniverseDownloader.exe` + `_internal/`), runs the built exe with `--selftest` and requires `Listo` in `%LOCALAPPDATA%\UniverseDownloader\selftest.txt`, then compiles `installer.iss` with Inno Setup 6.
+- `build.ps1` makes sure `bin/` has FFmpeg (`scripts/setup_ffmpeg.py`) and deno (`scripts/setup_deno.py`), runs PyInstaller against `youtubedpl.spec` into `build_out/` (onedir: `UniverseDownloader.exe` + `_internal/`), runs the built exe with `--selftest` and requires `Listo` in `%LOCALAPPDATA%\UniverseDownloader\selftest.txt`, then compiles `installer.iss` with Inno Setup 6. `-NoSetup` stops after the self-test (under a minute instead of ten): use it while iterating.
+- FFmpeg is the BtbN **shared** build: `ffmpeg.exe` and `ffprobe.exe` are under 1 MB each and share the libraries as DLLs in `bin/`. The static build used before carried the same libraries inside each executable (386 MB, over half the installer). PyInstaller scans what `ffmpeg.exe` links against and copies those DLLs a second time into the root of `_internal` — even when they are declared as data files — so the spec drops the root copies from `a.binaries` after the analysis. After changing the FFmpeg version, check that no `av*.dll` sits loose in `build_out\UniverseDownloader\_internal`. `bin/estatico/` holds the old static executables and is not bundled.
 - `installer.iss` installs per user (no admin) into `%LOCALAPPDATA%\Programs\UniverseDownloader`. Never change its `AppId`: that is what makes a new version upgrade the installed one in place. It wipes `{app}\_internal` on every install, so nothing the user must keep can live in the program folder (see `DATA_DIR` below).
 - The lite edition sets `UNIVERSE_LITE_BUILD=1`, which `youtubedpl.spec` reads to exclude `rembg`, `torch`, `torchvision`, `diffusers`, `transformers`, etc. (see `excluded_modules` in the spec).
 - deno is bundled because yt-dlp needs a JavaScript runtime for YouTube and most end users have no Node. `DownloaderService` looks for deno on `PATH`, then in the bundled `bin/`, then falls back to Node, and passes whichever it finds to yt-dlp through `js_runtimes` (yt-dlp only enables deno by default: a runtime that is merely on `PATH` is not used unless declared).
@@ -83,7 +94,8 @@ Layered FastAPI app under `src/`:
 src/
 ├── main.py            # Entry point: desktop window (pywebview) on Windows; browser + tray elsewhere; --selftest
 ├── version.py         # APP_NAME, APP_VERSION, APP_ID (AppUserModelID), UPDATES_REPO
-├── app.py             # FastAPI app instance, mounts /static and /content, serves index.html, /health
+├── app.py             # FastAPI app: serves index.html and /static at once; loads the API router in a background thread (api_ready)
+├── prefs.py           # preferencias.json in DATA_DIR: theme and last save folder
 ├── config.py           # Central config: BASE_DIR (read-only resources) vs DATA_DIR (writable), FFmpeg locations, feature flags
 ├── api/routes.py       # All REST endpoints (single router, prefix /api), including /app/info and /update/*
 ├── models/schemas.py    # Pydantic DTOs (DownloadRequest, VideoInfo, VideoQuality)
@@ -100,11 +112,15 @@ src/
 └── views/index.html     # Single-page HTML shell
 ```
 
-Request flow: window (WebView2) → `static/js/app.js` (fetch calls) → `api/routes.py` → `models/schemas.py` validation → `services/*` (business logic) → `utils/*` → external tools (`yt-dlp`, FFmpeg, rembg, diffusers) → work files under `DOWNLOAD_FOLDER` → `FileResponse` back to the page, which triggers a download; `main.py` sets `webview.settings['ALLOW_DOWNLOADS']`, so pywebview shows the native "Save as" dialog and the user picks where the file goes.
+Request flow: window (WebView2) → `static/js/app.js` (fetch calls) → `api/routes.py` → `models/schemas.py` validation → `services/*` (business logic) → `utils/*` → external tools (`yt-dlp`, FFmpeg, rembg, diffusers) → work files under `DOWNLOAD_FOLDER`.
+
+**Finished files are moved, not downloaded.** In the desktop window the page asks where to save through the native dialog (`window.pywebview.api.elegir_destino`, implemented by `Api` in `main.py`) and the engine moves the file from the work folder (`POST /api/save`): instant on the same disk whatever the size. The old path — `fetch` → `response.blob()` → link click — held the whole file in the window's memory (500 MB for a 500 MB video). `entregarArchivo()` / `entregarDesdeTarjeta()` in `app.js` wrap this for downloads, H.264 conversion, audio extraction and PDF; batches ask once for a folder (`elegir_carpeta`). Save dialogs are queued one at a time and never hold a slot in the task queue; cancelling one leaves the card offering a retry, and closing the card discards the work file (`POST /api/discard`). In browser mode there is no native dialog, so results download through a plain link. The per-flow `…/download/{id}` endpoints remain for that. Images still go through blobs: they are small and double as previews.
+
+**Startup order matters.** `run_window()` creates the window immediately with a splash page in the theme's background colour and starts the engine in the thread `webview.start(func)` provides; `app.py` in turn registers the API router (which drags in yt-dlp, pikepdf, curl_cffi…) from a background thread, so the page is served as soon as FastAPI is up. A request to `/api/` that arrives earlier waits on `api_ready` (`WaitForApi`, a plain ASGI middleware) instead of failing. Code that needs `src.api.routes` right after importing `src.app` must wait for `app.api_ready` too. `window.events.loaded` fires twice (splash, then the interface). `main.py` records each phase with `_mark()` when `UNIVERSE_TIMING=1`; keep those marks when reordering startup.
 
 ### Frontend design
 
-`static/css/styles.css` uses MollyIA's design system (its `webui/app.css`): warm neutral tokens on `:root` with the dark set under `body.dark-mode`, system font, 248 px sidebar + panel, 34 px controls, pills, banners and modals — with Universe Downloader's amber (`--accent`) instead of MollyIA's blue. The theme follows the system until the user flips the switch (stored in `localStorage`, which persists because the window runs with `private_mode=False` and its own `storage_path`). `app.js` builds a lot of markup with fixed class names and ids (`.modal-title`, `.progress-fill`, `.video-details`, `.format-btn.active`, `.upload-zone.dragover`, `.task-card…`, `.file-item`…): restyle those classes rather than renaming them. Downloads, H.264 conversion and audio extraction run as floating task cards in `#taskManager` (they do not block the window; several can queue); only PDF compression still uses the modal with a progress bar. The status pill in the top bar follows both. The top bar title comes from each menu entry's `data-title`.
+`static/css/styles.css` uses MollyIA's design system (its `webui/app.css`): warm neutral tokens on `:root` with the dark set under `body.dark-mode`, system font, 248 px sidebar + panel, 34 px controls, pills, banners and modals — with Universe Downloader's amber (`--accent`) instead of MollyIA's blue. The theme follows the system until the user flips the switch. The choice is saved by the engine in `preferencias.json` (`POST /api/preferences`, `src/prefs.py`), injected into the page (`window.APP_INFO.theme`, `<body class="dark-mode">`) and used for the window's background colour — not just `localStorage`, which is scoped to the origin and the window opens a different port every time. `app.js` builds a lot of markup with fixed class names and ids (`.modal-title`, `.progress-fill`, `.video-details`, `.format-btn.active`, `.upload-zone.dragover`, `.task-card…`, `.file-item`…): restyle those classes rather than renaming them. Downloads, H.264 conversion and audio extraction run as floating task cards in `#taskManager` (they do not block the window; several can queue); only PDF compression still uses the modal with a progress bar. The status pill in the top bar follows both. The top bar title comes from each menu entry's `data-title`.
 
 ### Optional/feature-gated AI features
 
@@ -124,6 +140,7 @@ Unlike rembg/outpaint, `pikepdf` is a lightweight, always-installed dependency (
 - `download()` retries up to 3 times on failure (with backoff and alternate yt-dlp `player_client` values on retry), falls back to a single `best` format if merging fails, and falls back to `pybalt`/cobalt.tools specifically for TikTok URLs when yt-dlp fails outright.
 - Trimming needs only one of the two fields: no start means from the beginning, no end means to the end (requiring both used to make a lone "end" silently download the whole video). With a range set, yt-dlp downloads just that section through FFmpeg, which reports **no percentage** while it runs — so the progress dict carries `trim` (`{start, end}` in seconds) and the task card shows a moving bar with "Descargando solo de 00:00 a 01:00…" instead of a stuck 0 %.
 - Progress is exposed as numbers (`downloaded_bytes`, `total_bytes`, `speed_bps`, `eta_seconds`) plus `phase` (the running postprocessor: `Merger`, `ExtractAudio`…); `describeDownload()` in `app.js` turns them into plain Spanish ("Faltan 8 min 38 s · 24,8 MB de 1,2 GB", "Uniendo video y audio…"). Never show yt-dlp's raw strings (`2.42MiB/s`, `ETA 08:38`) to the user.
+- The scan keeps yt-dlp's analysis for 5 minutes (`_remember_info`) and the download resumes from it with `process_ie_result` instead of extracting the same video again (a 20 s section went from 4.7 s to 3.5 s). If that analysis no longer works — expired links — it is dropped and the video is extracted afresh. The cache key is the URL as `get_video_info` cleans it, so `download` must clean it the same way.
 - `/api/scan` (video metadata lookup) is cached in-memory for 5 minutes per URL (`_scan_cache` in `routes.py`) to avoid repeated yt-dlp extraction calls.
 - H.264 conversion (`convert_to_h264`) shells out via `ffmpeg-python` in a background thread while polling elapsed time against an estimated duration to report percent progress.
 
