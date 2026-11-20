@@ -38,7 +38,6 @@ for logger_name in ['asyncio', 'uvicorn.error', 'uvicorn.access']:
 # Agregar el directorio raíz al path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.api import router as api_router
 from src.config import DOWNLOADS_DIR, FROZEN, get_feature_flags
 from src.version import APP_NAME, APP_VERSION
 
@@ -60,8 +59,41 @@ app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 # Montar directorio de descargas para reproducción
 app.mount("/content", StaticFiles(directory=DOWNLOADS_DIR), name="content")
 
-# Registrar rutas de la API
-app.include_router(api_router)
+# Las rutas de la API se cargan en segundo plano. Importarlas arrastra yt-dlp, pikepdf, curl_cffi y
+# el resto de lo pesado (dos tercios del arranque del motor), y la interfaz no las necesita para
+# pintarse: así la página se sirve enseguida y las funciones quedan listas un momento después.
+# Una petición a /api/ que llegue antes espera a que terminen de cargar; no falla.
+api_ready = threading.Event()
+api_error = None
+
+
+def _load_api():
+    global api_error
+    try:
+        from src.api import router as api_router
+        app.include_router(api_router)
+    except Exception as error:   # se verá en el registro y en la primera petición a la API
+        api_error = error
+        logging.getLogger("motor").exception("no se pudieron cargar las rutas de la API")
+    finally:
+        api_ready.set()
+
+
+class WaitForApi:
+    """ASGI puro (sin BaseHTTPMiddleware, que frena las respuestas de archivos grandes)."""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and not api_ready.is_set() and scope["path"].startswith("/api/"):
+            import asyncio
+            await asyncio.to_thread(api_ready.wait, 60)
+        await self.inner(scope, receive, send)
+
+
+app.add_middleware(WaitForApi)
+threading.Thread(target=_load_api, daemon=True, name="api").start()
 
 
 # Respaldo de limpieza: cada endpoint que entrega un archivo ya lo borra apenas se envía, pero una
@@ -107,7 +139,11 @@ async def home():
     feature_flags = json.dumps(get_feature_flags(), ensure_ascii=False, separators=(",", ":"))
     html = html.replace('{"rembg":true,"outpaint":true,"ffmpeg":true}', feature_flags)
     # versión: la muestra la barra lateral y evita que la ventana use estilos o scripts de la versión anterior
-    return html.replace('__APP_VERSION__', APP_VERSION)
+    html = html.replace('__APP_VERSION__', APP_VERSION)
+    # el tema guardado va en la propia página: se pinta bien desde el primer cuadro
+    from src import prefs
+    theme = prefs.theme()
+    return html.replace('__APP_THEME__', theme).replace('<body>', '<body class="dark-mode">' if theme == 'dark' else '<body>', 1)
 
 
 @app.get("/health")

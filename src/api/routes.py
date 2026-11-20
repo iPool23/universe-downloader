@@ -1214,6 +1214,20 @@ _UPDATE_CACHE_TTL = 6 * 3600   # una consulta a GitHub cada 6 h como mucho (salv
 _update: dict = {"checked_at": 0.0, "info": None, "status": "idle", "percent": 0, "error": None}
 
 
+class PreferencesRequest(BaseModel):
+    theme: Optional[str] = None     # 'dark' | 'light'
+
+
+@router.post("/preferences")
+async def save_preferences(request: PreferencesRequest):
+    """Guarda las preferencias que deben durar entre sesiones (por ahora, el tema)."""
+    from src import prefs
+    if request.theme not in ("dark", "light"):
+        raise HTTPException(status_code=400, detail="Tema no válido")
+    prefs.update(tema=request.theme)
+    return {"theme": request.theme}
+
+
 @router.get("/app/info")
 async def app_info():
     """Nombre y versión de la app (los muestra la barra lateral)."""

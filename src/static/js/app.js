@@ -12,12 +12,14 @@ let selectedAudioQuality = 192; // Por defecto 192kbps
 let availableQualities = [];
 
 // Theme Handling
+// El tema elegido se guarda en el motor (preferencias.json), no solo en localStorage: la ventana
+// abre un puerto distinto cada vez y, para el navegador, eso es otro sitio con otro almacenamiento.
 const themeSwitch = document.getElementById('themeSwitch');
-const userTheme = localStorage.getItem('theme');
+const savedTheme = (window.APP_INFO && window.APP_INFO.theme) || localStorage.getItem('theme');
 const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
 // Initial State
-if (userTheme === 'dark' || (!userTheme && systemDark)) {
+if (savedTheme === 'dark' || (!savedTheme && systemDark)) {
     document.body.classList.add('dark-mode');
     if (themeSwitch) themeSwitch.checked = true;
 } else {
@@ -28,13 +30,14 @@ if (userTheme === 'dark' || (!userTheme && systemDark)) {
 // Toggle Listener
 if (themeSwitch) {
     themeSwitch.addEventListener('change', function (e) {
-        if (e.target.checked) {
-            document.body.classList.add('dark-mode');
-            localStorage.setItem('theme', 'dark');
-        } else {
-            document.body.classList.remove('dark-mode');
-            localStorage.setItem('theme', 'light');
-        }
+        const theme = e.target.checked ? 'dark' : 'light';
+        document.body.classList.toggle('dark-mode', theme === 'dark');
+        localStorage.setItem('theme', theme);
+        fetch('/api/preferences', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ theme })
+        }).catch(() => { /* sin motor: queda al menos en localStorage */ });
     });
 }
 

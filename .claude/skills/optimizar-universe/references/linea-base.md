@@ -11,6 +11,8 @@ Segundos acumulados desde que se lanza la app. «Compilada» es `build_out\Unive
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-11-20 | 3.1.1 | código | 1,33 | 1,61 | 1,61 | Línea base |
 | 2026-11-20 | 3.1.1 | compilada | 1,13 | 1,42 | 1,83 | Línea base |
+| 2026-11-20 | 3.1.1+ | código | 0,60 | 1,09 | — | Ventana y motor a la vez; API en segundo plano (funciones listas a 1,37 s) |
+| 2026-11-20 | 3.1.1+ | compilada | 0,69 | 1,10 | 1,32 | Ídem (funciones listas a 1,18 s) |
 
 Desglose de la línea base compilada: Python en marcha 0,21 · motor importado 0,67 · motor escuchando
 0,72 · ventana creada 0,72 · ventana visible 1,13 · interfaz cargada 1,42. La ventana no empezaba a

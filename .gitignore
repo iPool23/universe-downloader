@@ -64,3 +64,5 @@ build_out_tmp/
 build_out_pyinstaller.log
 interfaz/
 selftest.txt
+preferencias.json
+arranque.json

@@ -30,16 +30,28 @@ búscalo aquí. Cada entrada dice qué se midió y con qué script, para poder r
 - **Ojo:** la clave de la caché es la URL tal como la limpia el escaneo. Si se cambia cómo se limpia
   una URL en `get_video_info`, hay que hacer lo mismo en `download`.
 
+### Ventana y motor a la vez, y la interfaz antes que las funciones pesadas (20/11/2026)
+- **Problema medido:** la ventana no empezaba a crearse hasta que el motor escuchaba (0,72 s en la
+  compilada) y WebView2 tardaba 0,41 s más en mostrarse (`medir_arranque.py`).
+- **Primer intento, insuficiente:** crear la ventana con una pantalla de inicio y arrancar el motor
+  en el hilo de `webview.start(func)`. La ventana apareció a los 0,61 s (antes 1,33, desde el
+  código), pero la interfaz quedó lista casi igual (1,58 frente a 1,61): importar el motor y crear
+  la ventana compiten por el intérprete en vez de sumarse.
+- **Lo que sí funcionó:** además, `app.py` carga las rutas de la API (yt-dlp, pikepdf, curl_cffi…)
+  en un hilo aparte. El motor sirve la página en cuanto FastAPI está listo y las funciones quedan
+  disponibles poco después; una petición a `/api/` que llegue antes espera (`WaitForApi`), no falla.
+- **Resultado, app compilada (mediana de 5):** ventana visible 1,13 → 0,69 s; interfaz cargada
+  1,42 → 1,10 s; funciones listas a 1,18 s; primera apertura 1,83 → 1,32 s. Desde el código:
+  ventana 1,33 → 0,60 s e interfaz 1,61 → 1,09 s.
+- **Arreglo de paso:** el tema elegido se guardaba en `localStorage`, ligado al puerto, que cambia
+  en cada apertura, así que no se conservaba. Ahora vive en `preferencias.json` (`src/prefs.py`),
+  va inyectado en la página y da el color de fondo de la ventana desde el primer instante.
+- **Ojo:** `window.events.loaded` salta dos veces (pantalla de inicio e interfaz). Y cualquier código
+  que use `src.api.routes` justo después de importar `src.app` debe esperar a `app.api_ready`.
+
 ## Pendiente (medido, con ganancia clara)
 
 Ordenado por lo que más nota el dueño.
-
-### 3. Crear la ventana mientras arranca el motor
-- **Problema medido:** la ventana no empezaba a crearse hasta que el motor escuchaba (0,72 s en la
-  compilada), y WebView2 tarda 0,41 s más en mostrarse (`medir_arranque.py`).
-- **Cambio:** crear la ventana de inmediato con una pantalla de inicio local y arrancar el motor en
-  el hilo que da `webview.start(func)`; al estar listo, cargar la interfaz.
-- **Se espera:** ventana visible hacia los 0,65 s (antes 1,13) e interfaz hacia 1,0 s (antes 1,42).
 
 ### 4. FFmpeg una sola vez
 - **Problema medido:** `ffmpeg.exe` y `ffprobe.exe` estáticos suman 386 MB y 87 MB del instalador

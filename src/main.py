@@ -252,24 +252,15 @@ class Api:
     """
 
     def __init__(self):
+        from src import prefs
         self._window = None
-        self._prefs = DATA_DIR / "preferencias.json"
-        self._last_dir = None
-        try:
-            import json
-            saved = json.loads(self._prefs.read_text(encoding="utf-8")).get("ultima_carpeta")
-            if saved and Path(saved).is_dir():
-                self._last_dir = saved
-        except Exception:
-            pass
+        saved = prefs.load().get("ultima_carpeta")
+        self._last_dir = saved if saved and Path(saved).is_dir() else None
 
     def _remember(self, directory: str):
+        from src import prefs
         self._last_dir = directory
-        try:
-            import json
-            self._prefs.write_text(json.dumps({"ultima_carpeta": directory}, ensure_ascii=False), encoding="utf-8")
-        except OSError:
-            pass
+        prefs.update(ultima_carpeta=directory)
 
     def elegir_destino(self, filename: str) -> str:
         """Cuadro «Guardar como». Devuelve la ruta elegida, o "" si se canceló."""
@@ -309,8 +300,27 @@ class Api:
         return True
 
 
+# Lo que se ve mientras el motor termina de arrancar: el fondo del tema y, solo si tarda, un
+# indicador. Así la ventana aparece enseguida y, si todo va rápido, no se llega a notar el cambio.
+SPLASH_HTML = """<!doctype html><html lang="es"><meta charset="utf-8"><title>{name}</title>
+<style>
+html,body{{height:100%;margin:0;background:{bg};}}
+body{{display:flex;align-items:center;justify-content:center;font:14px 'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;color:{fg};}}
+.w{{display:flex;flex-direction:column;align-items:center;gap:14px;opacity:0;animation:in .25s ease-out .5s forwards;}}
+.s{{width:26px;height:26px;border:3px solid {line};border-top-color:#e39a17;border-radius:50%;animation:g .9s linear infinite;}}
+@keyframes g{{to{{transform:rotate(360deg)}}}} @keyframes in{{to{{opacity:1}}}}
+</style><body><div class="w"><div class="s"></div><div>Abriendo {name}…</div></div></body></html>"""
+
+ERROR_HTML = """<!doctype html><html lang="es"><meta charset="utf-8"><title>{name}</title>
+<body style="font:14px 'Segoe UI',system-ui,sans-serif;background:{bg};color:{fg};padding:40px;max-width:640px">
+<h2 style="font-weight:600">No se pudo iniciar {name}</h2>
+<p>El motor interno no arrancó. Cierra esta ventana y vuelve a abrir la app; si se repite, reinstálala.</p>
+<p style="opacity:.7">Detalle: {detail}<br>Registro: {log}</p></body></html>"""
+
+
 def run_window() -> int:
     """La app como ventana propia. Al cerrarla termina todo el proceso."""
+    import html
     import webview
     _mark("webview importado")
 
@@ -319,8 +329,11 @@ def run_window() -> int:
         if _already_running():
             return 0
 
-    port = _free_port()
-    start_server(port)
+    from src import prefs
+    saved_theme = prefs.theme()
+    dark = saved_theme == "dark" or (not saved_theme and _system_dark())
+    colors = dict(name=APP_NAME, bg="#1b1b1a" if dark else "#f6f6f4", fg="#ecebe8" if dark else "#1d1d1c",
+                  line="rgba(255,255,255,.16)" if dark else "rgba(20,20,18,.16)")
 
     # Los archivos terminados salen con el cuadro «Guardar como» de Windows; los enlaces externos
     # (página de una versión nueva) se abren en el navegador del sistema.
@@ -330,13 +343,28 @@ def run_window() -> int:
     if debug_port:
         webview.settings['REMOTE_DEBUGGING_PORT'] = int(debug_port)
 
+    port = _free_port()
+    url = f"http://{HOST}:{port}/"
     api = Api()
+    # La ventana nace con la pantalla de inicio, sin esperar al motor: crearla (WebView2) y arrancar
+    # el motor (importar FastAPI, yt-dlp…) tardan parecido y antes iban uno detrás del otro.
     window = webview.create_window(
-        APP_NAME, f"http://{HOST}:{port}/", width=1180, height=780, min_size=(900, 600),
-        background_color="#1b1b1a" if _system_dark() else "#f6f6f4", text_select=True, js_api=api,
+        APP_NAME, html=SPLASH_HTML.format(**colors), width=1180, height=780, min_size=(900, 600),
+        background_color=colors["bg"], text_select=True, js_api=api,
     )
     api._window = window
     _mark("ventana creada")
+
+    def boot():
+        """Corre en un hilo aparte desde que empieza webview.start: arranca el motor y carga la interfaz."""
+        try:
+            start_server(port)
+        except Exception as error:
+            logging.getLogger("ventana").exception("el motor no arrancó")
+            window.load_html(ERROR_HTML.format(detail=html.escape(str(error)), log=html.escape(str(LOG_FILE)), **colors))
+            return
+        window.load_url(url)   # espera sola a que la ventana exista
+        _mark("interfaz pedida")
 
     def shown():
         _mark("ventana visible")
@@ -347,17 +375,29 @@ def run_window() -> int:
                 logging.getLogger("ventana").exception("sin acceso a la ventana nativa")
 
     def loaded():
-        # la página ya pintó: fin del arranque para quien lo mide
-        if _TIMING and not any(m[0] == "interfaz cargada" for m in _marks):
-            _mark("interfaz cargada")
-            _dump_marks(os.environ.get("UNIVERSE_TIMING_OUT") or DATA_DIR / "arranque.json")
-            if os.environ.get("UNIVERSE_TIMING_EXIT") == "1":
-                os._exit(0)
+        # «loaded» salta dos veces: con la pantalla de inicio y con la interfaz. Solo la segunda
+        # es el fin del arranque para quien lo mide.
+        if not _TIMING or any(m[0] == "interfaz cargada" for m in _marks):
+            return
+        try:
+            current = window.get_current_url() or ""
+        except Exception:
+            current = ""
+        if not current.startswith(url):
+            return
+        _mark("interfaz cargada")
+        # las rutas de la API cargan en segundo plano: se anota también cuándo quedan listas
+        from src import app as engine
+        engine.api_ready.wait(60)
+        _mark("funciones listas")
+        _dump_marks(os.environ.get("UNIVERSE_TIMING_OUT") or DATA_DIR / "arranque.json")
+        if os.environ.get("UNIVERSE_TIMING_EXIT") == "1":
+            os._exit(0)
 
     window.events.shown += shown
     window.events.loaded += loaded
-    # private_mode=False + carpeta propia: el tema elegido (localStorage) se conserva entre sesiones
-    webview.start(private_mode=False, storage_path=str(DATA_DIR / "interfaz"),
+    # private_mode=False + carpeta propia: WebView2 conserva su caché entre sesiones
+    webview.start(boot, private_mode=False, storage_path=str(DATA_DIR / "interfaz"),
                   debug=os.environ.get("UNIVERSE_UI_DEBUG") == "1")
     os._exit(0)   # cierra también el motor y cualquier descarga en curso
 
@@ -422,6 +462,10 @@ def selftest() -> int:
         port = _free_port()
         start_server(port)
         base = f"http://{HOST}:{port}"
+        from src import app as engine
+        engine.api_ready.wait(60)
+        if engine.api_error:
+            raise engine.api_error
         with urllib.request.urlopen(f"{base}/health", timeout=10) as r:
             lines.append(f"motor: {json.load(r).get('status')}")
         with urllib.request.urlopen(f"{base}/", timeout=10) as r:
