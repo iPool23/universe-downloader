@@ -233,6 +233,82 @@ def _system_dark() -> bool:
         return False
 
 
+def _downloads_dir() -> str:
+    """Carpeta Descargas del usuario (la que Windows tenga configurada, aunque la haya movido)."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders") as key:
+            return winreg.QueryValueEx(key, "{374DE290-123F-4565-9164-39C4925E467B}")[0]
+    except Exception:
+        return str(Path.home() / "Downloads")
+
+
+class Api:
+    """Lo que la página le pide a la ventana (window.pywebview.api.*).
+
+    Sirve para guardar resultados sin pasarlos por la página: la ventana pregunta dónde y el motor
+    mueve el archivo (POST /api/save). pywebview expone los métodos públicos; lo interno va con "_".
+    """
+
+    def __init__(self):
+        self._window = None
+        self._prefs = DATA_DIR / "preferencias.json"
+        self._last_dir = None
+        try:
+            import json
+            saved = json.loads(self._prefs.read_text(encoding="utf-8")).get("ultima_carpeta")
+            if saved and Path(saved).is_dir():
+                self._last_dir = saved
+        except Exception:
+            pass
+
+    def _remember(self, directory: str):
+        self._last_dir = directory
+        try:
+            import json
+            self._prefs.write_text(json.dumps({"ultima_carpeta": directory}, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+
+    def elegir_destino(self, filename: str) -> str:
+        """Cuadro «Guardar como». Devuelve la ruta elegida, o "" si se canceló."""
+        import webview
+        ext = Path(filename).suffix
+        types = (f"Archivo {ext[1:].upper()} (*{ext})", "Todos los archivos (*.*)") if ext else ()
+        res = self._window.create_file_dialog(webview.FileDialog.SAVE, directory=self._last_dir or _downloads_dir(),
+                                              save_filename=filename, file_types=types)
+        if not res:
+            return ""
+        path = res if isinstance(res, str) else res[0]
+        if ext and not path.lower().endswith(ext.lower()):
+            path += ext
+        self._remember(str(Path(path).parent))
+        return path
+
+    def elegir_carpeta(self) -> str:
+        """Cuadro para elegir una carpeta (lotes: se pregunta una vez). "" si se canceló."""
+        import webview
+        res = self._window.create_file_dialog(webview.FileDialog.FOLDER, directory=self._last_dir or _downloads_dir())
+        if not res:
+            return ""
+        path = res if isinstance(res, str) else res[0]
+        self._remember(path)
+        return path
+
+    def mostrar_en_carpeta(self, path: str) -> bool:
+        """Abre el Explorador con el archivo seleccionado."""
+        import subprocess
+        target = Path(path)
+        if not target.exists():
+            return False
+        if IS_WINDOWS:
+            subprocess.Popen(["explorer", "/select,", str(target)])
+        else:
+            subprocess.Popen(["open", "-R", str(target)])
+        return True
+
+
 def run_window() -> int:
     """La app como ventana propia. Al cerrarla termina todo el proceso."""
     import webview
@@ -254,10 +330,12 @@ def run_window() -> int:
     if debug_port:
         webview.settings['REMOTE_DEBUGGING_PORT'] = int(debug_port)
 
+    api = Api()
     window = webview.create_window(
         APP_NAME, f"http://{HOST}:{port}/", width=1180, height=780, min_size=(900, 600),
-        background_color="#1b1b1a" if _system_dark() else "#f6f6f4", text_select=True,
+        background_color="#1b1b1a" if _system_dark() else "#f6f6f4", text_select=True, js_api=api,
     )
+    api._window = window
     _mark("ventana creada")
 
     def shown():

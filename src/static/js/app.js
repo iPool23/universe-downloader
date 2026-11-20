@@ -567,6 +567,127 @@ async function download() {
     enqueueTask(taskId, () => runDownloadTask(taskId, { url, format, startTime, endTime, quality, audioQuality }));
 }
 
+// ---- Entregar un resultado al usuario ----
+// En la app de escritorio la ventana pregunta dónde guardar (cuadro nativo) y el motor MUEVE el
+// archivo desde su carpeta de trabajo: no pasa por la memoria de la página ni se copia dos veces.
+// Antes, un video de 1 GB ocupaba 1 GB de memoria solo para guardarse. En el navegador no hay
+// ventana nativa: se descarga por enlace, que el navegador va escribiendo según llega.
+
+function ventanaNativa() {
+    return window.pywebview?.api?.elegir_destino ? window.pywebview.api : null;
+}
+
+function nombreCarpeta(ruta) {
+    const partes = String(ruta).split(/[\\/]/).filter(Boolean);
+    return partes.length > 1 ? partes[partes.length - 2] : String(ruta);
+}
+
+async function guardarEn(kind, id, dest) {
+    const response = await fetch('/api/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, id, dest })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || 'No se pudo guardar el archivo');
+    return data.path;
+}
+
+function descartarResultado(kind, id) {
+    fetch('/api/discard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, id })
+    }).catch(() => { /* el barrido del motor lo borrará más tarde */ });
+}
+
+function descargarPorEnlace(url, filename) {
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+}
+
+// Los cuadros «Guardar como» salen de uno en uno aunque terminen varias tareas a la vez.
+let colaEntregas = Promise.resolve();
+
+// Devuelve { path } si se guardó con la ventana nativa, { cancelled: true } si se cerró el cuadro,
+// o { link: true } si se descargó por enlace (modo navegador).
+function entregarArchivo({ kind, id, url, filename }) {
+    const api = ventanaNativa();
+    if (!api) {
+        descargarPorEnlace(url, filename);
+        return Promise.resolve({ link: true });
+    }
+    const turno = colaEntregas.then(async () => {
+        const dest = await api.elegir_destino(filename);
+        if (!dest) return { cancelled: true };
+        return { path: await guardarEn(kind, id, dest) };
+    });
+    colaEntregas = turno.catch(() => {});
+    return turno;
+}
+
+// Termina una tarjeta de tarea entregando su archivo. No se espera dentro de la tarea: la cola
+// sigue con la siguiente mientras el usuario decide dónde guardar.
+async function entregarDesdeTarjeta(taskId, entrega, textoListo) {
+    document.getElementById(`task-${taskId}`)?.classList.remove('indeterminate');
+    const accion = (texto, alPulsar) => {
+        const estado = document.getElementById(`taskStatus-${taskId}`);
+        if (!estado) return;
+        estado.classList.toggle('task-card-action', Boolean(alPulsar));
+        estado.onclick = alPulsar || null;
+        estado.title = alPulsar ? texto : '';
+    };
+    if (ventanaNativa()) updateTaskCard(taskId, { percent: 100, status: 'Listo: elige dónde guardarlo' });
+    // mientras no se guarde, la X descarta el archivo de trabajo
+    setTaskCancelHandler(taskId, () => { descartarResultado(entrega.kind, entrega.id); removeTaskCard(taskId); });
+
+    let resultado;
+    try {
+        resultado = await entregarArchivo(entrega);
+    } catch (error) {
+        updateTaskCard(taskId, { status: error.message, error: true });
+        removeTaskCard(taskId, 15000);
+        return;
+    }
+    if (resultado.cancelled) {
+        // el archivo sigue en la carpeta de trabajo: se puede volver a intentar
+        updateTaskCard(taskId, { percent: 100, status: 'Sin guardar. Pulsa aquí para elegir dónde.' });
+        accion('Elegir dónde guardarlo', () => { accion('', null); entregarDesdeTarjeta(taskId, entrega, textoListo); });
+        return;
+    }
+    if (resultado.path) {
+        updateTaskCard(taskId, { percent: 100, status: `Guardado en ${nombreCarpeta(resultado.path)} · Mostrar`, done: true });
+        accion('Mostrar en la carpeta', () => ventanaNativa()?.mostrar_en_carpeta(resultado.path));
+        removeTaskCard(taskId, 12000);
+    } else {
+        updateTaskCard(taskId, { percent: 100, status: textoListo, done: true });
+        removeTaskCard(taskId, 4000);
+    }
+}
+
+// Lotes: en la app de escritorio se pregunta UNA vez por la carpeta y cada resultado se mueve ahí.
+// Devuelve la carpeta, "" si se canceló, o null en modo navegador (cada archivo baja por enlace).
+async function elegirCarpetaDeLote() {
+    const api = ventanaNativa();
+    if (!api) return null;
+    return (await api.elegir_carpeta()) || '';
+}
+
+async function entregarEnLote(carpeta, { kind, id, url, filename }) {
+    if (carpeta === null) {
+        descargarPorEnlace(url, filename);
+        // pequeña pausa entre descargas para que el navegador no las bloquee por venir muy seguidas
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        return;
+    }
+    await guardarEn(kind, id, `${carpeta.replace(/[\\/]+$/, '')}\\${filename}`);
+}
+
 // ---- Progreso de la descarga en lenguaje llano (antes: «2.42MiB/s · ETA 08:38») ----
 
 function formatBytes(bytes) {
@@ -678,39 +799,13 @@ async function runDownloadTask(taskId, { url, format, startTime, endTime, qualit
 
             if (progress.status === 'completed') {
                 completed = true;
-
-                const fileResponse = await fetch(`/api/download/file/${download_id}`);
-                if (!fileResponse.ok) {
-                    throw new Error('Error al obtener el archivo');
-                }
-
-                const blob = await fileResponse.blob();
-                const downloadUrl = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = downloadUrl;
-
-                const contentDisposition = fileResponse.headers.get('content-disposition');
-                let filename = 'video.' + format;
-                if (contentDisposition) {
-                    // con espacios o tildes el motor manda filename*=utf-8''Nombre%20codificado
-                    const encoded = contentDisposition.match(/filename\*=(?:utf-8'')?([^;]+)/i);
-                    const plain = contentDisposition.match(/filename="?([^";]+)"?/i);
-                    if (encoded && encoded[1]) {
-                        try { filename = decodeURIComponent(encoded[1].trim()); } catch (e) { /* se queda el nombre por defecto */ }
-                    } else if (plain && plain[1]) {
-                        filename = plain[1].trim();
-                    }
-                }
-
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(downloadUrl);
-                a.remove();
-
-                document.getElementById(`task-${taskId}`)?.classList.remove('indeterminate');
-                updateTaskCard(taskId, { percent: 100, status: 'Listo: elige dónde guardarlo', done: true });
-                removeTaskCard(taskId, 4000);
+                // sin await: la tarea termina aquí y deja su turno en la cola
+                entregarDesdeTarjeta(taskId, {
+                    kind: 'download',
+                    id: download_id,
+                    url: `/api/download/file/${download_id}`,
+                    filename: progress.filename || `video.${format}`,
+                }, 'Descargado ✓');
             } else if (progress.status === 'error') {
                 throw new Error(progress.error || 'Error durante la descarga');
             }
@@ -788,16 +883,12 @@ async function runConvertTask(taskId, file) {
             updateTaskCard(taskId, { percent, status });
         });
 
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = `/api/convert/download/${result.convertId}`;
-        a.download = result.filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-
-        updateTaskCard(taskId, { percent: 100, status: 'Convertido y descargado ✓', done: true });
-        removeTaskCard(taskId, 4000);
+        entregarDesdeTarjeta(taskId, {
+            kind: 'convert',
+            id: result.convertId,
+            url: `/api/convert/download/${result.convertId}`,
+            filename: result.filename,
+        }, 'Convertido y descargado ✓');
     } catch (error) {
         updateTaskCard(taskId, { status: error.message, error: true });
         removeTaskCard(taskId, 15000);   // tiempo para leer por qué falló; la X la cierra antes
@@ -836,6 +927,9 @@ async function convertOneVideo(file, onProgress) {
 async function uploadAndConvertBatch() {
     if (selectedVideoBatch.length === 0) return;
 
+    const carpetaLote = await elegirCarpetaDeLote();
+    if (carpetaLote === '') return;   // cerró el cuadro: no se empieza
+
     const btn = document.getElementById('uploadConvertBtn');
     btn.disabled = true;
     const total = selectedVideoBatch.length;
@@ -854,19 +948,15 @@ async function uploadAndConvertBatch() {
                 }
             });
 
-            // Dispara la descarga y sigue con el siguiente sin esperar al usuario.
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = `/api/convert/download/${result.convertId}`;
-            a.download = result.filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+            await entregarEnLote(carpetaLote, {
+                kind: 'convert',
+                id: result.convertId,
+                url: `/api/convert/download/${result.convertId}`,
+                filename: result.filename,
+            });
 
             if (status) { status.textContent = 'Listo'; status.className = 'img-batch-status done'; }
             okCount++;
-            // Pequeña pausa entre descargas para que el navegador no las bloquee por venir muy seguidas.
-            await new Promise(resolve => setTimeout(resolve, 800));
         } catch (error) {
             if (status) { status.textContent = 'Error'; status.className = 'img-batch-status error'; }
         }
@@ -1003,16 +1093,12 @@ async function runExtractAudioTask(taskId, file) {
             updateTaskCard(taskId, { percent, status });
         });
 
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = `/api/extract-audio/download/${result.extractId}`;
-        a.download = result.filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-
-        updateTaskCard(taskId, { percent: 100, status: 'Audio extraído y descargado ✓', done: true });
-        removeTaskCard(taskId, 4000);
+        entregarDesdeTarjeta(taskId, {
+            kind: 'audio',
+            id: result.extractId,
+            url: `/api/extract-audio/download/${result.extractId}`,
+            filename: result.filename,
+        }, 'Audio extraído y descargado ✓');
     } catch (error) {
         updateTaskCard(taskId, { status: error.message, error: true });
         removeTaskCard(taskId, 15000);   // tiempo para leer por qué falló; la X la cierra antes
@@ -1050,6 +1136,9 @@ async function extractOneAudio(file, onProgress) {
 async function uploadAndExtractAudioBatch() {
     if (selectedAudioBatch.length === 0) return;
 
+    const carpetaLote = await elegirCarpetaDeLote();
+    if (carpetaLote === '') return;   // cerró el cuadro: no se empieza
+
     const btn = document.getElementById('uploadExtractBtn');
     btn.disabled = true;
     const total = selectedAudioBatch.length;
@@ -1068,17 +1157,15 @@ async function uploadAndExtractAudioBatch() {
                 }
             });
 
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = `/api/extract-audio/download/${result.extractId}`;
-            a.download = result.filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+            await entregarEnLote(carpetaLote, {
+                kind: 'audio',
+                id: result.extractId,
+                url: `/api/extract-audio/download/${result.extractId}`,
+                filename: result.filename,
+            });
 
             if (status) { status.textContent = 'Listo'; status.className = 'img-batch-status done'; }
             okCount++;
-            await new Promise(resolve => setTimeout(resolve, 800));
         } catch (error) {
             if (status) { status.textContent = 'Error'; status.className = 'img-batch-status error'; }
         }
@@ -1267,19 +1354,24 @@ async function compressPdf() {
 
                 closeModal();
 
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = `/api/pdf/compress/download/${compress_id}`;
-                a.download = `${selectedPdfFile.name.replace(/\.pdf$/i, '')}_comprimido.pdf`;
-                document.body.appendChild(a);
-                a.click();
+                const entrega = await entregarArchivo({
+                    kind: 'pdf',
+                    id: compress_id,
+                    url: `/api/pdf/compress/download/${compress_id}`,
+                    filename: `${selectedPdfFile.name.replace(/\.pdf$/i, '')}_comprimido.pdf`,
+                });
+                if (entrega.cancelled) descartarResultado('pdf', compress_id);
+                // cómo terminó la entrega, en palabras
+                const destino = entrega.path ? `Guardado en ${nombreCarpeta(entrega.path)}.`
+                    : entrega.cancelled ? 'No se guardó porque cerraste el cuadro sin elegir dónde.'
+                    : 'La descarga comenzó automáticamente.';
 
                 const finalSize = progress.final_size || originalSize;
                 const savings = Math.max(0, Math.round((1 - finalSize / originalSize) * 100));
                 const origMB = (originalSize / 1024 / 1024).toFixed(1);
                 const finalMB = (finalSize / 1024 / 1024).toFixed(1);
 
-                let message = `${origMB} MB → ${finalMB} MB (-${savings}%). La descarga comenzó automáticamente.`;
+                let message = `${origMB} MB → ${finalMB} MB (-${savings}%). ${destino}`;
                 let modalType = 'success';
                 let modalTitle = '¡PDF comprimido!';
 
@@ -1288,18 +1380,19 @@ async function compressPdf() {
                         modalType = 'error';
                         modalTitle = 'No se pudo alcanzar el peso máximo';
                         message = `Ni con la compresión más agresiva se logró bajar de ${maxSizeMB} MB. ` +
-                            `Mejor resultado posible: ${origMB} MB → ${finalMB} MB (-${savings}%). Se descargó igual.`;
+                            `Mejor resultado posible: ${origMB} MB → ${finalMB} MB (-${savings}%). ${destino}`;
                     } else {
                         message = `${origMB} MB → ${finalMB} MB, dentro del límite de ${maxSizeMB} MB ` +
-                            `(calidad ${progress.quality_used}%). La descarga comenzó automáticamente.`;
+                            `(calidad ${progress.quality_used}%). ${destino}`;
                     }
                 }
+                if (entrega.cancelled && modalType === 'success') {
+                    modalType = 'error';
+                    modalTitle = 'PDF comprimido, pero sin guardar';
+                }
 
-                setTimeout(() => {
-                    document.body.removeChild(a);
-                    showModal(modalType, modalType === 'success' ? 'check-circle-2' : 'alert-triangle', modalTitle, message);
-                    resetPdfCompress();
-                }, 800);
+                showModal(modalType, modalType === 'success' ? 'check-circle-2' : 'alert-triangle', modalTitle, message);
+                resetPdfCompress();
 
             } else if (progress.status === 'error') {
                 throw new Error(progress.error || 'Error durante la compresión');

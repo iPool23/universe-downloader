@@ -49,6 +49,7 @@ edición ligera lo usa.
 | 2026-11-20 | blob (la que usaba la descarga de video) | 2,04 | 500 MB | Línea base |
 | 2026-11-20 | enlace (conversiones, audio, PDF) | 2,01 | ~1 MB | |
 | 2026-11-20 | mover | 0,00 | ninguna | Mismo disco |
+| 2026-11-20 | mover, por `POST /api/save` (300 MB) | 0,02 | ninguna | Es lo que usa la app desde hoy |
 
 Medido con `urllib`; dentro de WebView2 el blob cuesta además la copia a disco que hace el navegador.
 

@@ -1106,6 +1106,107 @@ async def download_compressed_pdf(compress_id: str):
 
 
 # =====================================================
+# APP DE ESCRITORIO: GUARDAR EL RESULTADO MOVIÉNDOLO
+# =====================================================
+# En la ventana de escritorio el archivo terminado no viaja por HTTP hasta la página: la ventana
+# pregunta dónde guardarlo (cuadro nativo) y el motor lo mueve desde la carpeta de trabajo. En el
+# mismo disco eso no copia nada, pese lo que pese el archivo. Las rutas de descarga por HTTP de
+# cada flujo siguen existiendo para el modo navegador.
+
+class SaveRequest(BaseModel):
+    kind: str      # 'download' | 'convert' | 'audio' | 'pdf'
+    id: str
+    dest: str      # ruta completa elegida en «Guardar como»
+
+
+def _result_entry(kind: str, item_id: str):
+    """(ruta del resultado, ruta del archivo de entrada o None, función que olvida la tarea)."""
+    if kind == 'download':
+        result = download_results.get(item_id)
+        if not result:
+            return None
+
+        def forget():
+            download_results.pop(item_id, None)
+            download_progress.pop(item_id, None)
+        return Path(result['file_path']), None, forget
+
+    stores = {
+        'convert': (conversion_results, conversion_progress),
+        'audio': (audio_extract_results, audio_extract_progress),
+        'pdf': (compress_results, compress_progress),
+    }
+    if kind not in stores:
+        return None
+    results, progress = stores[kind]
+    result = results.get(item_id)
+    if not result:
+        return None
+
+    def forget():
+        results.pop(item_id, None)
+        progress.pop(item_id, None)
+    input_path = Path(result['input_path']) if result.get('input_path') else None
+    return Path(result['output_path']), input_path, forget
+
+
+def _move_file(src: Path, dest: Path):
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.replace(src, dest)          # mismo disco: instantáneo, y reemplaza si el usuario aceptó sobrescribir
+    except OSError:
+        shutil.copy2(src, dest)        # otro disco: no hay más remedio que copiar
+        src.unlink(missing_ok=True)
+
+
+@router.post("/save")
+async def save_result(request: SaveRequest):
+    """Mueve el resultado de una tarea a la ruta que eligió el usuario."""
+    entry = _result_entry(request.kind, request.id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Ese resultado ya no está disponible")
+    src, input_path, forget = entry
+    if not src.exists():
+        forget()
+        raise HTTPException(status_code=404, detail="El archivo ya no está en la carpeta de trabajo")
+    dest = Path(request.dest)
+    if not dest.is_absolute():
+        raise HTTPException(status_code=400, detail="La ruta de destino no es válida")
+    try:
+        await asyncio.to_thread(_move_file, src, dest)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar en esa ubicación: {e.strerror or e}")
+    if input_path:
+        try:
+            input_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    forget()
+    return {"saved": True, "path": str(dest), "size": dest.stat().st_size}
+
+
+class DiscardRequest(BaseModel):
+    kind: str
+    id: str
+
+
+@router.post("/discard")
+async def discard_result(request: DiscardRequest):
+    """El usuario cerró la tarea sin guardar: se borran sus archivos de trabajo ya, sin esperar al barrido."""
+    entry = _result_entry(request.kind, request.id)
+    if entry:
+        src, input_path, forget = entry
+        for path in (src, input_path):
+            try:
+                if path:
+                    path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        forget()
+    return {"discarded": bool(entry)}
+
+
+# =====================================================
 # APP DE ESCRITORIO: VERSIÓN Y ACTUALIZACIONES
 # =====================================================
 

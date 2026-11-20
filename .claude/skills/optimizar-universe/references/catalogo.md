@@ -5,19 +5,23 @@ búscalo aquí. Cada entrada dice qué se midió y con qué script, para poder r
 
 ## Aplicado
 
-_(vacío al crear la skill; se llena conforme se aplican las entradas de «Pendiente»)_
+### Entregar el archivo moviéndolo, no pasándolo por la página (20/11/2026)
+- **Problema medido:** la descarga de video hacía `fetch → response.blob() → a.click()`. El archivo
+  entero pasaba por la memoria de la ventana: 500 MB de memoria y 2,0 s por cada 500 MB
+  (`medir_entrega.py`), más la copia a disco del navegador.
+- **Cambio:** la ventana pregunta la ruta con el cuadro nativo (`Api.elegir_destino` en `main.py`) y
+  el motor mueve el archivo (`POST /api/save`). Lo usan la descarga, la conversión a H.264, extraer
+  audio y el PDF; los lotes preguntan una sola vez por la carpeta (`Api.elegir_carpeta`). Si el
+  usuario cierra el cuadro, la tarjeta ofrece reintentar y la X descarta (`POST /api/discard`). El
+  cuadro no ocupa turno en la cola de tareas. En modo navegador todo baja por enlace.
+- **Resultado:** guardar 300 MB pasó de ~1,2 s y 300 MB de memoria a 18 ms y nada de memoria.
+  Comprobado en la ventana real con una descarga de verdad (archivo de 15 s en su destino).
+- **Sin comprobar:** el cuadro nativo en sí no se puede pulsar por CDP; en la prueba se sustituyó
+  solo la elección de la ruta. Entre discos distintos el motor copia (no hay otra forma).
 
 ## Pendiente (medido, con ganancia clara)
 
 Ordenado por lo que más nota el dueño.
-
-### 1. Entregar el archivo moviéndolo, no pasándolo por la página
-- **Problema medido:** la descarga de video hacía `fetch → response.blob() → a.click()`. El archivo
-  entero pasaba por la memoria de la ventana: 500 MB de memoria y 2,0 s por cada 500 MB
-  (`medir_entrega.py`), más la copia a disco del navegador.
-- **Cambio:** la ventana pide la ruta con el cuadro nativo «Guardar como» (API de pywebview) y el
-  motor mueve el archivo desde la carpeta de trabajo. En el mismo disco no se copia nada.
-- **Se espera:** 0 s y 0 MB de memoria extra, sea cual sea el tamaño.
 
 ### 2. No analizar el video dos veces
 - **Problema medido:** `/api/scan` tarda 1,05 s y la descarga volvía a llamar a `extract_info`
