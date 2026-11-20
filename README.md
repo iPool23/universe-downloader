@@ -85,24 +85,7 @@ powershell -ExecutionPolicy Bypass -File release.ps1 -Notes "qué cambió"
 
 ## 🍎 macOS
 
-Si vas a generar la versión para Mac, usa estos recursos dentro del proyecto:
-
-- `mac/bin/ffmpeg`
-- `mac/bin/ffprobe`
-- `mac/icon.icns`
-
-Después compila en macOS con:
-
-```bash
-python3 scripts/build.py --lite
-python3 scripts/create_release.py --lite
-```
-
-También puedes usar `BUILD_MACOS.command` desde la carpeta raíz del proyecto en macOS.
-
-El resultado será `dist/UniverseDownloader.app` y el ZIP de distribución para macOS.
-
-Si prefieres automatizarlo en GitHub, el workflow `.github/workflows/macos-release.yml` instala Python, dependencias y FFmpeg, genera el icono de la app desde `public/imgs/favicon.ico`, compila el `.app`, crea un `.dmg` y sube los artefactos. Cuando el push es a un tag `v*`, además publica la release en GitHub.
+Por ahora la app se publica solo para Windows. La versión para Mac está pendiente: se retomará cuando el programa esté optimizado. Los recursos de la compilación anterior (`mac/`, `scripts/build.py`, `BUILD_MACOS.command`) siguen en el proyecto para ese momento, pero no se publican ni se compilan automáticamente.
 
 ### Requisitos
 

@@ -5,8 +5,8 @@
 # La app de escritorio se publica desde la rama desktop: main es la web y cada push ahí la despliega
 # a producción, así que este script nunca toca main.
 # Requisitos: gh auth login, Inno Setup 6.
-# La etiqueta v<versión> también dispara el build de macOS (GitHub Actions), que adjunta su .dmg
-# a la misma release.
+# Solo Windows: la release lleva el instalador y SHA256SUMS.txt. La versión de Mac está pendiente y
+# la rama desktop no tiene ningún workflow que adjunte archivos por su cuenta.
 param([string]$Notes = "", [switch]$SkipBuild)
 # "Continue": en PowerShell 5 cualquier mensaje de git/gh por stderr sería un error fatal con "Stop";
 # los fallos se comprueban con $LASTEXITCODE.
@@ -62,7 +62,7 @@ if (-not (git tag --list $tag)) {
 Write-Host "== Release $tag en $repo"
 $existing = @(gh release list --repo $repo --json tagName --jq ".[].tagName" 2>$null)
 if ($existing -contains $tag) {
-    # el build de macOS pudo crearla antes: solo se adjuntan los archivos de Windows
+    # la release ya existe (se repite la publicación): se reemplazan sus archivos
     gh release upload $tag --repo $repo --clobber $setup dist\SHA256SUMS.txt
 } else {
     gh release create $tag --repo $repo --title "Universe Downloader $version" --notes-file $notesFile $setup dist\SHA256SUMS.txt

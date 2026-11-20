@@ -67,15 +67,12 @@ powershell -ExecutionPolicy Bypass -File release.ps1 [-Notes "what changed"] [-S
 
 `src/services/updater.py` (ported from MollyIA) asks the GitHub API for the latest release of `UPDATES_REPO`. If its tag is newer than `APP_VERSION`, the sidebar footer and a yellow banner offer it. On accept (`POST /api/update/install`) the app downloads `UniverseDownloader-Setup-<version>.exe`, checks its SHA256 against `SHA256SUMS.txt` from the same release, writes a small `.cmd` that runs the installer silently and reopens the app, and exits so its files can be replaced. Rules that must keep holding: downloads only from `https://github.com/<repo>/releases/download/…`, and never run an installer whose checksum was not verified. In development or on macOS (`updater.can_install()` is false) the banner only links to the release page.
 
-### macOS build
+### macOS: pending, Windows only for now
 
-```bash
-python scripts/build.py --lite
-python scripts/create_release.py --lite
-```
+The owner decided on 2026-11-20 that the app ships for Windows only, like his other desktop app Erizo: a release carries the Windows installer and `SHA256SUMS.txt`, nothing else. The Mac port waits until the program is fully optimized; do not start it, and do not attach Mac files to a release, unless he asks.
 
-- `scripts/build.py` and `scripts/create_release.py` are now only the macOS path (`BUILD_MACOS.command` wraps them; FFmpeg must be in `mac/bin/` — see `mac/README.md`). On Windows use `build.ps1`: the spec now produces a folder there, not the single `dist/UniverseDownloader.exe` that `create_release.py` expects.
-- CI: `.github/workflows/macos-release.yml` runs on `v*` tags (and on push to `main`, which is the website's branch), builds the lite `.app`, wraps it in a `.dmg`, and — only for `v*` tags — attaches it to the GitHub Release (the same release `release.ps1` creates for Windows; whichever runs first creates it, the other uploads to it).
+- `desktop` has no macOS workflow on purpose. It used to build a `.dmg` on every `v*` tag and attach it to the release, which is how two unverified Mac files ended up on v3.0.0 (removed since). `main` still has its own copy of that workflow; leave it alone.
+- The old Mac path is kept for when the port resumes: `scripts/build.py --lite` + `scripts/create_release.py --lite` (`BUILD_MACOS.command` wraps them; FFmpeg goes in `mac/bin/` — see `mac/README.md`). It predates the desktop window: on macOS `main.py` still runs browser + tray, and the pywebview window was never verified there. On Windows use `build.ps1`; the spec produces a folder there, not the single `dist/UniverseDownloader.exe` that `create_release.py` expects.
 
 ## Architecture
 
