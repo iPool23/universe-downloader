@@ -6,7 +6,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Aplicación de escritorio para Windows que descarga videos y audio de YouTube, Facebook, Kick, Twitch, TikTok y más en máxima calidad. Se instala con un instalador y se actualiza sola.
+Aplicación de escritorio para Windows y Mac (con chip Apple) que descarga videos y audio de YouTube, Facebook, Kick, Twitch, TikTok y más en máxima calidad. Se actualiza sola.
 
 ## ✨ Características
 
@@ -57,6 +57,16 @@ src/
 
 Descarga `UniverseDownloader-Setup-<versión>.exe` desde [Releases](https://github.com/iPool23/universe-downloader/releases) y ejecútalo. No pide administrador. Cuando haya una versión nueva, la app avisa y se actualiza sola.
 
+### Instalación (Mac)
+
+Funciona en Mac con chip Apple (M1 o posterior) y macOS 13 o más nuevo.
+
+1. Descarga `UniverseDownloader-<versión>-mac-arm64.zip` desde [Releases](https://github.com/iPool23/universe-downloader/releases). Safari lo descomprime solo; si no, haz doble clic en el zip.
+2. Arrastra **Universe Downloader** a la carpeta **Aplicaciones**.
+3. Ábrela. La primera vez macOS avisa que no puede verificar la app, porque no está firmada con una cuenta de Apple Developer: pulsa **Listo**, ve a **Ajustes del Sistema → Privacidad y seguridad**, baja hasta el aviso de Universe Downloader y elige **Abrir de todos modos**. Solo se hace una vez.
+
+Abierta desde Aplicaciones, se actualiza sola igual que en Windows.
+
 ### Desde el código
 
 ```bash
@@ -71,7 +81,7 @@ pip install -r requirements.txt
 python src/main.py
 ```
 
-En Windows se abre en su propia ventana. Con `python src/main.py --browser` (o en macOS) se abre en el navegador, en `http://127.0.0.1:8000`.
+Se abre en su propia ventana. Con `python src/main.py --browser` se abre en el navegador, en `http://127.0.0.1:8000`.
 
 ### Compilar y publicar (Windows)
 
@@ -85,7 +95,13 @@ powershell -ExecutionPolicy Bypass -File release.ps1 -Notes "qué cambió"
 
 ## 🍎 macOS
 
-Por ahora la app se publica solo para Windows. La versión para Mac está pendiente: se retomará cuando el programa esté optimizado. Los recursos de la compilación anterior (`mac/`, `scripts/build.py`, `BUILD_MACOS.command`) siguen en el proyecto para ese momento, pero no se publican ni se compilan automáticamente.
+La versión de Mac se compila en GitHub Actions (`.github/workflows/mac.yml`) con cada push a la rama `desktop`: arma `Universe Downloader.app`, abre la ventana y prueba descargas, conversiones y la actualización automática antes de guardar el zip. `release.ps1` espera esa compilación y publica el zip junto con el instalador de Windows. Para compilar en una Mac a mano:
+
+```bash
+pip install -r requirements.txt pyinstaller
+python scripts/setup_ffmpeg.py && python scripts/setup_deno.py   # FFmpeg y deno en mac/bin/
+UNIVERSE_LITE_BUILD=1 pyinstaller youtubedpl.spec --noconfirm    # dist/Universe Downloader.app
+```
 
 ### Requisitos
 

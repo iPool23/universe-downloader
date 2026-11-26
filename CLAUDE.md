@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-Universe Downloader is a Windows desktop app (FastAPI backend + vanilla JS frontend shown in its own window) for downloading video/audio from YouTube, TikTok, Facebook, Kick, Twitch, etc. via `yt-dlp`, plus a set of image and document tools (format conversion, H.264 conversion, PDF compression, AI background removal, AI outpainting). `python src/main.py` starts the local engine on a free `127.0.0.1` port and opens it in a `pywebview` window (Edge WebView2, already part of Windows); closing the window quits the app. It is distributed as an Inno Setup installer and updates itself from GitHub Releases. The desktop shell, updater, installer and visual design follow the same approach as the author's other desktop app, MollyIA: look there first when extending any of them.
+Universe Downloader is a desktop app for Windows and macOS on Apple Silicon (FastAPI backend + vanilla JS frontend shown in its own window) for downloading video/audio from YouTube, TikTok, Facebook, Kick, Twitch, etc. via `yt-dlp`, plus a set of image and document tools (format conversion, H.264 conversion, PDF compression, AI background removal, AI outpainting). `python src/main.py` starts the local engine on a free `127.0.0.1` port and opens it in a `pywebview` window (Edge WebView2 on Windows, WKWebView on macOS, both part of the system); closing the window quits the app. On Windows it is distributed as an Inno Setup installer, on macOS as a zipped `.app` (see "macOS" below), and both update themselves from GitHub Releases. The desktop shell, updater, installer and visual design follow the same approach as the author's other desktop app, MollyIA (whose Mac build is the model for this one): look there first when extending any of them.
 
-On macOS (and with `--browser`, or if `pywebview` is missing) it still runs the previous way: default browser at `http://127.0.0.1:8000` plus a system tray icon (`pystray`). The pywebview window has not been verified on macOS.
+With `--browser`, or if `pywebview` is missing, it runs the previous way: default browser at `http://127.0.0.1:8000` plus a system tray icon (`pystray`).
 
 Note: some docs under `docs/` (ARCHITECTURE.md, PROJECT_SUMMARY.md, README_DEV.md) describe an earlier/simpler version of the project (single `src/youtubedpl.py` file, YouTube-only, no image/AI features). They are outdated — treat `src/` itself as the source of truth for current architecture.
 
@@ -37,7 +37,7 @@ worse until it was measured (FFmpeg DLLs duplicated by PyInstaller), so do not s
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the desktop window (Windows)
+# Run the desktop window (Windows and macOS)
 python src/main.py
 
 # Previous mode: default browser + system tray icon
@@ -49,7 +49,7 @@ python src/main.py --selftest
 
 There is no configured test runner (no pytest/tox config). `test_rembg.py` at the repo root is a standalone manual script (`python test_rembg.py`), not a pytest suite — it exercises `RembgService` directly.
 
-The app is single-instance (the owner asked for it: opening it twice used to leave a second engine running in the background). `main._already_running()` takes a named Windows mutex; a second launch restores and focuses the existing window — or flashes it in the taskbar when Windows denies focus — and exits. The installed app and a run from source use different mutex names, so they do not block each other, and browser mode gets the same guarantee by probing `/health` on its port. Set `UNIVERSE_ALLOW_MULTIPLE=1` only when a test really needs two instances.
+The app is single-instance (the owner asked for it: opening it twice used to leave a second engine running in the background). `main._already_running()` takes a named Windows mutex; a second launch restores and focuses the existing window — or flashes it in the taskbar when Windows denies focus — and exits. The installed app and a run from source use different mutex names, so they do not block each other, and browser mode gets the same guarantee by probing `/health` on its port. On macOS LaunchServices already activates a running `.app` instead of starting it twice; for the other cases `_already_running_mac()` holds an `fcntl` lock on a file in `TMPDIR` and a second launch only runs `open -b <APP_ID>`. Set `UNIVERSE_ALLOW_MULTIPLE=1` only when a test really needs two instances. `UNIVERSE_PORT` fixes the window's engine port (the Mac tests use it to reach the API of the window they open).
 
 To inspect the real window from a terminal, set `UNIVERSE_UI_DEBUG_PORT=<port>` before `python src/main.py`: WebView2 then exposes Chrome DevTools Protocol on that port (screenshots, `Runtime.evaluate`). Saving a finished file opens the native "Save as" dialog, which CDP cannot click — exercise downloads through the API endpoints instead.
 
@@ -61,8 +61,9 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 #   -Full     include the AI features (rembg, torch, diffusers: several GB)
 #   -Install  also install the result on this PC (silent)
 
-# Publish: build + SHA256SUMS.txt + tag v<version> + GitHub Release (needs a clean tree pushed to the desktop branch)
-powershell -ExecutionPolicy Bypass -File release.ps1 [-Notes "what changed"] [-SkipBuild]
+# Publish: build + Mac zip from GitHub Actions + SHA256SUMS.txt + tag v<version> + GitHub Release
+# (needs a clean tree pushed to the desktop branch)
+powershell -ExecutionPolicy Bypass -File release.ps1 [-Notes "what changed"] [-SkipBuild] [-SkipMac]
 ```
 
 - **Do not publish a release for every change.** The owner iterates in batches: a requested fix or feature ends as a commit on `desktop`, tested from source or by installing a local build on this PC (`build.ps1 -Fast -Install`). Run `release.ps1` — which also pushes the branch — only when he explicitly asks to publish.
@@ -77,14 +78,19 @@ powershell -ExecutionPolicy Bypass -File release.ps1 [-Notes "what changed"] [-S
 
 ### How updates work
 
-`src/services/updater.py` (ported from MollyIA) asks the GitHub API for the latest release of `UPDATES_REPO`. If its tag is newer than `APP_VERSION`, the sidebar footer and a yellow banner offer it. On accept (`POST /api/update/install`) the app downloads `UniverseDownloader-Setup-<version>.exe`, checks its SHA256 against `SHA256SUMS.txt` from the same release, writes a small `.cmd` that runs the installer silently and reopens the app, and exits so its files can be replaced. Rules that must keep holding: downloads only from `https://github.com/<repo>/releases/download/…`, and never run an installer whose checksum was not verified. In development or on macOS (`updater.can_install()` is false) the banner only links to the release page.
+`src/services/updater.py` (ported from MollyIA) asks the GitHub API for the latest release of `UPDATES_REPO`. If its tag is newer than `APP_VERSION`, the sidebar footer and a yellow banner offer it. On accept (`POST /api/update/install`) the app downloads `UniverseDownloader-Setup-<version>.exe`, checks its SHA256 against `SHA256SUMS.txt` from the same release, writes a small `.cmd` that runs the installer silently and reopens the app, and exits so its files can be replaced. On macOS it downloads `UniverseDownloader-<version>-mac-arm64.zip` instead (same checksum rule) and `_mac_swap()` starts a shell script that waits for the app's PID to exit, unpacks the zip with `ditto`, checks the new bundle with `codesign --verify`, swaps the `.app` keeping the old one until the move succeeds, clears the quarantine flag and reopens it. Rules that must keep holding: downloads only from `https://github.com/<repo>/releases/download/…`, and never run an installer whose checksum was not verified. In development, or on a Mac whose app runs translocated (straight from Downloads) or from a folder it cannot write to, `updater.can_install()` is false and the banner only links to the release page.
 
-### macOS: pending, Windows only for now
+### macOS (Apple Silicon)
 
-The owner decided on 2026-11-20 that the app ships for Windows only, like his other desktop app Erizo: a release carries the Windows installer and `SHA256SUMS.txt`, nothing else. The Mac port waits until the program is fully optimized; do not start it, and do not attach Mac files to a release, unless he asks.
+The owner asked for the Mac version on 2026-11-26 (it had been on hold since 2026-11-20). The reference machine is a coworker's iMac M4 on macOS 26; there is **no Mac here**, so every Mac build and test runs in GitHub Actions. The `.app` is arm64 only, like MollyIA's: Intel Macs are not supported.
 
-- `desktop` has no macOS workflow on purpose. It used to build a `.dmg` on every `v*` tag and attach it to the release, which is how two unverified Mac files ended up on v3.0.0 (removed since). `main` still has its own copy of that workflow; leave it alone.
-- The old Mac path is kept for when the port resumes: `scripts/build.py --lite` + `scripts/create_release.py --lite` (`BUILD_MACOS.command` wraps them; FFmpeg goes in `mac/bin/` — see `mac/README.md`). It predates the desktop window: on macOS `main.py` still runs browser + tray, and the pywebview window was never verified there. On Windows use `build.ps1`; the spec produces a folder there, not the single `dist/UniverseDownloader.exe` that `create_release.py` expects.
+- `.github/workflows/mac.yml` runs on every push to `desktop` (and by hand). It is not `workflow_dispatch`-only because GitHub only dispatches workflows that exist on the default branch, and `main` must not be touched. It never publishes: it builds on `macos-15` with Python 3.14 and PyInstaller 6.20, checks the signature, runs `--selftest` with a Finder-like minimal `PATH` (so the bundled FFmpeg is the one found), runs `scripts/probar_mac.py`, checks the signature again (the app must not write inside its bundle) and uploads `UniverseDownloader-<version>-mac-arm64.zip` as the artifact `UniverseDownloader-mac-arm64`, plus `pruebas-mac` (a screenshot of the window, `pruebas-mac.json`, the startup marks).
+- `scripts/probar_mac.py` opens the built `.app` with `UNIVERSE_PORT` and `UNIVERSE_TIMING`, waits for the interface to load in the real window, then drives the API: archive.org MP4 and MP3 sections saved through `POST /api/save` and checked with the bundled ffprobe, H.264 conversion, PNG→WebP, PDF compression, a YouTube scan (informative only: GitHub's IPs are usually blocked) and the update check. Finally it installs a copy of the `.app` in a temp folder and runs the real update swap against a zip of the build.
+- `release.ps1` waits for the `mac.yml` run of the exact commit it publishes, downloads the zip and puts both files in `SHA256SUMS.txt` and the release. If that run failed it stops; `-SkipMac` publishes Windows only.
+- `youtubedpl.spec` builds onedir + `BUNDLE` → `dist/Universe Downloader.app` (bundle id = `APP_ID`, `LSMinimumSystemVersion` 13.0). PyInstaller signs it ad hoc; there is no Apple Developer ID, so the first open is blocked by Gatekeeper and the user must allow it in System Settings → Privacy & Security → "Open Anyway" (right-click → Open no longer works since macOS 15). Inside the bundle `BASE_DIR` is `Contents/Frameworks`; `DATA_DIR` is `~/Library/Application Support/UniverseDownloader`.
+- `scripts/setup_ffmpeg.py` puts Martin Riedl's static arm64 FFmpeg 9.1 (`ffmpeg`, `ffprobe`, with libx264 and libmp3lame) in `mac/bin/`, pinned by URL and SHA-256 — Homebrew's FFmpeg links against Homebrew libraries and would not run on a Mac without it. To move to a newer FFmpeg, update `MAC_BUILD` and both hashes. `scripts/setup_deno.py` puts the latest arm64 deno there, checked against its published `.sha256sum`. `mac/bin/` is git-ignored; `mac/icon.icns` (the folder icon on a rounded square, as macOS expects) is committed.
+- The menus are pywebview's Cocoa defaults translated through `MENUS_ES` in `main.py` (Edit menu included, so ⌘C/⌘V work in the page). Images saved with `<a download>` go through pywebview's `DownloadDelegate`, which shows a save panel.
+- The old Mac path (`scripts/build.py`, `scripts/create_release.py`, `BUILD_MACOS.command`, a workflow that attached an unverified `.dmg` to every tag) was removed. `main` still has its own `macos-release.yml`; leave it alone.
 
 ## Architecture
 
@@ -92,7 +98,7 @@ Layered FastAPI app under `src/`:
 
 ```
 src/
-├── main.py            # Entry point: desktop window (pywebview) on Windows; browser + tray elsewhere; --selftest
+├── main.py            # Entry point: desktop window (pywebview) on Windows and macOS; browser + tray with --browser; --selftest
 ├── version.py         # APP_NAME, APP_VERSION, APP_ID (AppUserModelID), UPDATES_REPO
 ├── app.py             # FastAPI app: serves index.html and /static at once; loads the API router in a background thread (api_ready)
 ├── prefs.py           # preferencias.json in DATA_DIR: theme and last save folder
