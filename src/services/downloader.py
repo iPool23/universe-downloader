@@ -32,6 +32,10 @@ class FriendlyError(Exception):
     """Error cuyo mensaje ya está redactado para la persona: no se vuelve a traducir."""
 
 
+def es_bloqueo_de_ip(error) -> bool:
+    return "not a bot" in str(error or "").lower()
+
+
 def friendly_error(error, ffmpeg_missing: bool = False) -> str:
     """Traduce los errores de yt-dlp/FFmpeg a algo que se entienda y sobre lo que se pueda actuar.
 
@@ -45,11 +49,14 @@ def friendly_error(error, ffmpeg_missing: bool = False) -> str:
     if ffmpeg_missing:
         return ("No se encontró FFmpeg. Es necesario para unir video y audio en la mayoría de los "
                 "videos. Reinstala Universe Downloader o instala FFmpeg (winget install ffmpeg).")
-    if "sign in to confirm" in low or "not a bot" in low or "login_required" in low or "use --cookies" in low:
-        return ("YouTube está pidiendo iniciar sesión para este video desde tu conexión, "
-                "así que ahora no se puede descargar. Prueba más tarde o desde otra red.")
-    if "sign in" in low or ("age" in low and "restrict" in low):
-        return "Este video requiere iniciar sesión o confirmar la edad: no se puede descargar."
+    if "confirm your age" in low or ("age" in low and "restrict" in low):
+        return "Este video tiene restricción de edad y pide iniciar sesión: no se puede descargar."
+    if es_bloqueo_de_ip(msg):
+        return ("YouTube no deja descargar desde esta red por ahora: pasa en redes de oficina o "
+                "universidad y con VPN. Desde el internet de tu casa o con los datos del celular "
+                "suele funcionar.")
+    if "sign in" in low or "login_required" in low or "use --cookies" in low:
+        return "Este video requiere iniciar sesión: no se puede descargar."
     if "format is not available" in low or "requested format" in low:
         return "No se encontró esa calidad para este video. Prueba con otra calidad."
     if "403" in low or "forbidden" in low:
@@ -411,11 +418,12 @@ class DownloaderService:
             opts['ffmpeg_location'] = self.ffmpeg_path if path_obj.is_dir() else str(path_obj.parent)
 
 
-        # Sin cuentas ni cookies: si el cliente web de YouTube exige verificación, se prueba con los
-        # clientes android e ios, que usan otra API. Para los demás sitios basta un intento.
+        # Sin cuentas ni cookies: si los clientes de serie de YouTube no dan formatos, se prueba
+        # ios_producer, que no pide PO token. El bloqueo por IP («not a bot») alcanza a todos los
+        # clientes, así que ahí no se reintenta. Para los demás sitios basta un intento.
         last_error: Optional[Exception] = None
         is_youtube = 'youtube.com' in url or 'youtu.be' in url
-        for client in ((None, 'android', 'ios') if is_youtube else (None,)):
+        for client in ((None, 'ios_producer') if is_youtube else (None,)):
             attempt_opts = dict(opts)
             if client:
                 attempt_opts['extractor_args'] = {'youtube': {'player_client': [client]}}
@@ -442,6 +450,8 @@ class DownloaderService:
                     }
             except Exception as e:
                 last_error = e
+                if es_bloqueo_de_ip(e):
+                    break
                 continue
 
         try:
@@ -714,14 +724,14 @@ class DownloaderService:
                 })
                 time.sleep(wait_time)
                 
-                # En los reintentos se prueban los clientes android e ios, que usan una API distinta a
-                # la de 'web' (la que YouTube castiga con su verificación anti-bot).
+                # En el segundo intento se prueba ios_producer, que no pide PO token; en el tercero,
+                # otra vez los clientes de serie con enlaces nuevos.
                 if attempt == 1:
-                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android']}}
-                    print("[RETRY] Switching to android player client...")
+                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['ios_producer']}}
+                    print("[RETRY] Switching to ios_producer player client...")
                 elif attempt == 2:
-                    ydl_opts['extractor_args'] = {'youtube': {'player_client': ['ios']}}
-                    print("[RETRY] Switching to ios player client...")
+                    ydl_opts.pop('extractor_args', None)
+                    print("[RETRY] Back to the default player clients...")
 
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -771,7 +781,10 @@ class DownloaderService:
             except Exception as e:
                 last_error = e
                 error_str = str(e).lower()
-                
+
+                if es_bloqueo_de_ip(e):
+                    break
+
                 # If 403 Forbidden, retry with fresh extraction
                 if '403' in error_str and attempt < max_retries - 1:
                     print(f"[RETRY] Got 403 Forbidden, will retry with fresh URLs...")

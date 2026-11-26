@@ -66,3 +66,6 @@ interfaz/
 selftest.txt
 preferencias.json
 arranque.json
+
+# yt-dlp actualizado por la propia app (solo aparece en desarrollo con UNIVERSE_YTDLP_UPDATE=1)
+yt-dlp/

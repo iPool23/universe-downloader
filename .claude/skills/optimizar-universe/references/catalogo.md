@@ -82,6 +82,26 @@ búscalo aquí. Cada entrada dice qué se midió y con qué script, para poder r
 - **Ojo:** el tope de 4 a la vez es por memoria (cada foto de 24 MP ocupa unos 70 MB abierta), no
   por procesador. Pillow suelta el intérprete mientras codifica: por eso los hilos sí suman aquí.
 
+### YouTube: yt-dlp al día, reintentos que sirven y actualización automática (26/11/2026)
+- **Problema:** yt-dlp 2026.10.26 fallaba con los reproductores nuevos de YouTube («n challenge
+  solving failed: a.addOnDisposeCallback is not a function», issue yt-dlp #18123), arreglado en
+  2026.11.23. Los reintentos con `android` e `ios` ya no servían: piden PO token y yt-dlp descarta
+  sus formatos. Y cada arreglo de YouTube obligaba a publicar la app entera.
+- **Cambio:** yt-dlp 2026.11.23; reintentos con los clientes de serie y luego `ios_producer`; el
+  bloqueo por IP («not a bot») corta los reintentos en el acto; mensaje que dice qué hacer;
+  `src/ytdlp_updater.py` baja de PyPI las versiones nuevas (SHA-256 verificado) y las usa en la
+  siguiente apertura.
+- **Resultado (desde la red de la oficina, `medir_descarga.py --fin 00:10`):** «Me at the zoo» 5,6
+  s en total; Rick Astley (4K) escaneo 2,3 s y descarga 14,8 s; Despacito 2,8 + 9,0 s; un Short
+  2,3 + 1,3 s; MP3 entero 2,1 + 0,7 s. archive.org sin cambios (360p, 20 s: 3,35 s).
+- **Ojo:** ese día la red ya no estaba bloqueada. yt-dlp 2026.10.26 con el código anterior también
+  bajó Rick Astley, pero con el error del resolvedor de desafíos, que en otros videos deja sin
+  formatos. El bloqueo de la semana anterior fue temporal.
+- **Actualización automática, comprobada en una compilación con yt-dlp 2026.10.26 dentro:** bajó y
+  dejó lista la 2026.11.23 a los 6,7 s de abrir; en la apertura siguiente `--selftest` dijo
+  «2026.11.23 (actualizado; la app trae 2026.10.26)». Con una copia estropeada volvió a la suya y la
+  marcó como mala. Coste en el arranque: funciones listas 1,24 → 1,32 s.
+
 ## Pendiente (medido, con ganancia clara)
 
 _(nada pendiente al 20/11/2026: todo lo medido con ganancia clara está aplicado)_
@@ -138,6 +158,19 @@ _(nada pendiente al 20/11/2026: todo lo medido con ganancia clara está aplicado
   hilo aparte, la interfaz está cargada a 1,05 s y las funciones listas a 1,13 s.
 - **Por qué no:** esas importaciones ya no están en el camino de la ventana. Lo máximo que se
   ganaría son 80 ms que ocurren después de que la interfaz ya se ve.
+
+### Saltarse el bloqueo de YouTube por IP sin cookies
+Investigado el 26/11/2026; no hay una forma fiable. Los mantenedores de yt-dlp dicen que, sin
+cookies, la única salida es otra IP (issues #12475 y #15865).
+- **PO tokens (bgutil-ytdlp-pot-provider, GPL-3.0):** sirven para los 403 en los formatos, no para
+  el bloqueo. Su propio README: «a PO Token does not bypass IP-based login restrictions».
+- **cobalt / pybalt para YouTube:** la instancia principal (api.cobalt.tools, v11.7.1) ya no
+  ofrece YouTube («no podemos saltar sus límites a nuestra escala», issue cobalt #1356). Las
+  comunitarias piden Turnstile, y pybalt 2025.7.1 no filtra por YouTube.
+- **Tor:** YouTube marca las salidas de Tor todavía más. Además es lento, y el proyecto Tor pide no
+  usarlo para descargas grandes.
+- **Proxies residenciales:** es lo que hacen las webs de pago. Cuestan dinero por GB y van contra la
+  idea de una app gratuita sin cuentas.
 
 ### Optimizar el cambio de vista o el DOM
 - **Medido:** 10 ms por cambio, que es un cuadro de pantalla. 560 elementos.

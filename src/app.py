@@ -70,8 +70,11 @@ api_error = None
 def _load_api():
     global api_error
     try:
+        from src import ytdlp_updater
+        ytdlp_updater.activar()
         from src.api import router as api_router
         app.include_router(api_router)
+        ytdlp_updater.comprobar_en_segundo_plano()
     except Exception as error:   # se verá en el registro y en la primera petición a la API
         api_error = error
         logging.getLogger("motor").exception("no se pudieron cargar las rutas de la API")

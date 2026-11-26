@@ -477,8 +477,10 @@ def selftest() -> int:
             lines.append(f"versión: {json.load(r).get('version')}")
 
         from src.api.routes import downloader
-        import yt_dlp
-        lines.append(f"yt-dlp: {yt_dlp.version.__version__}")
+        from src import ytdlp_updater
+        ytdlp = ytdlp_updater.origen()
+        detalle = f"actualizado; la app trae {ytdlp['empaquetada']}" if ytdlp['actualizada'] else f"el que trae la app; leído aparte: {ytdlp['empaquetada']}"
+        lines.append(f"yt-dlp: {ytdlp['version']} ({detalle})")
         lines.append(f"ffmpeg: {downloader.ffmpeg_path or 'NO ENCONTRADO'}")
         lines.append(f"js runtime: {', '.join(downloader.js_runtimes) or 'ninguno'}")
         if not downloader.ffmpeg_path:

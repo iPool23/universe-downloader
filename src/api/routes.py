@@ -1246,7 +1246,9 @@ async def save_preferences(request: PreferencesRequest):
 @router.get("/app/info")
 async def app_info():
     """Nombre y versión de la app (los muestra la barra lateral)."""
-    return {"name": APP_NAME, "version": APP_VERSION, "can_install": updater.can_install()}
+    from src import ytdlp_updater
+    return {"name": APP_NAME, "version": APP_VERSION, "can_install": updater.can_install(),
+            "yt_dlp": ytdlp_updater.origen()}
 
 
 def _update_payload() -> dict:

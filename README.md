@@ -100,7 +100,9 @@ Por ahora la app se publica solo para Windows. La versión para Mac está pendie
 4. Haz clic en "Descargar"
 5. Elige dónde guardar el archivo
 
-La app no usa cuentas ni cookies. Si un sitio exige iniciar sesión para un video (YouTube lo hace según la red desde la que te conectas), ese video no se puede descargar en ese momento.
+La app no usa cuentas ni cookies. Si un sitio exige iniciar sesión para un video (YouTube lo hace según la red desde la que te conectas), ese video no se puede descargar en ese momento. Suele pasar en redes de oficina o universidad y con VPN, y se suele resolver desde el internet de casa o con los datos del celular.
+
+El motor de descargas (yt-dlp) se actualiza solo: cuando YouTube cambia algo y sale un arreglo, la app lo baja en segundo plano y lo usa la siguiente vez que se abre, sin esperar una versión nueva de la app.
 
 ## 🛠️ Tecnologías
 

@@ -71,6 +71,9 @@ Medido con `urllib`; dentro de WebView2 el blob cuesta además la copia a disco 
 | 2026-11-20 | archive.org, tramo 0–20 s, 360p | 1,05 s (repetido: 1 ms) | 4,69 s | 4,69 s | Línea base. La descarga volvía a analizar el video (~1 s) |
 | 2026-11-20 | archive.org, tramo 0–20 s, 360p | 0,87 s | 3,47 s | 3,47 s | La descarga reutiliza el análisis del escaneo (mediana de 3) |
 | 2026-11-20 | YouTube | 3,53 s → «inicia sesión» | — | — | Bloqueo por IP, no medible desde esta red |
+| 2026-11-26 | YouTube «Me at the zoo», tramo 0–10 s | 2,55 s | 1,79 s | 4,3 s | yt-dlp 2026.11.23; la red ya no estaba bloqueada |
+| 2026-11-26 | YouTube Rick Astley (4K), tramo 0–10 s | 2,31 s | — | 17,1 s | 12,8 MB; Despacito 2,8 + 9,0 s; un Short 2,3 + 1,3 s |
+| 2026-11-26 | archive.org, tramo 0–20 s, 360p | 1,01 s | — | 4,36 s | Descarga 3,35 s: igual que antes de los cambios de YouTube |
 
 ## Editor de imagen (`medir_vista_previa.py`)
 
