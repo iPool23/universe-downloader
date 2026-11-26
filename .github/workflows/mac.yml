@@ -58,15 +58,6 @@ jobs:
           du -sh "$APP"
           plutil -p "$APP/Contents/Info.plist"
 
-      - name: Diagnóstico de FFmpeg por HTTPS
-        continue-on-error: true
-        run: |
-          FF="$APP/Contents/Frameworks/bin/ffmpeg"
-          URL=https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.avi
-          echo "--- sin SSL_CERT_FILE"; env -i HOME="$HOME" PATH=/usr/bin:/bin "$FF" -v error -t 1 -i "$URL" -f null - ; echo "código $?"
-          echo "--- con SSL_CERT_FILE"; env -i HOME="$HOME" PATH=/usr/bin:/bin SSL_CERT_FILE=/etc/ssl/cert.pem "$FF" -v error -t 1 -i "$URL" -f null - ; echo "código $?"
-          echo "--- sin verificar"; env -i HOME="$HOME" PATH=/usr/bin:/bin "$FF" -v error -tls_verify 0 -t 1 -i "$URL" -f null - ; echo "código $?"
-
       - name: Autotest del .app
         run: |
           env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin TMPDIR="$TMPDIR" "$APP/Contents/MacOS/UniverseDownloader" --selftest || true
