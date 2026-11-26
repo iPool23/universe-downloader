@@ -4,9 +4,9 @@ Punto de entrada de la aplicación
 Autor: Pool Anthony Deza Millones
 GitHub: @iPool23
 
-En Windows la app es una ventana de escritorio propia (pywebview sobre Edge WebView2, que ya trae
-el sistema) que muestra la interfaz servida por el motor local. Si pywebview no está disponible,
-o en macOS (ventana sin verificar todavía), se usa el modo anterior: navegador + ícono en la bandeja.
+La app es una ventana de escritorio propia (pywebview sobre Edge WebView2 en Windows y WKWebView en
+macOS, que ya trae cada sistema) que muestra la interfaz servida por el motor local. Si pywebview no
+está disponible se usa el modo anterior: navegador + ícono en la bandeja.
 
     python src/main.py              ventana de escritorio
     python src/main.py --browser    modo anterior (navegador + bandeja)
@@ -142,6 +142,24 @@ def _windows_identity():
 _instance_mutex = None   # el candado vive mientras viva el proceso
 
 
+def _already_running_mac() -> bool:
+    global _instance_mutex
+    if os.environ.get("UNIVERSE_ALLOW_MULTIPLE") == "1":
+        return False
+    import fcntl
+    import subprocess
+    import tempfile
+    name = "UniverseDownloader" + ("" if FROZEN else ".dev") + ".lock"
+    _instance_mutex = open(Path(tempfile.gettempdir()) / name, "w")
+    try:
+        fcntl.flock(_instance_mutex, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return False
+    except OSError:
+        if FROZEN:
+            subprocess.run(["open", "-b", APP_ID], check=False)
+        return True
+
+
 def _already_running() -> bool:
     """Una sola instancia: si ya hay una abierta, se trae al frente y esta termina.
 
@@ -151,6 +169,8 @@ def _already_running() -> bool:
     UNIVERSE_ALLOW_MULTIPLE=1 lo desactiva (solo para pruebas).
     """
     global _instance_mutex
+    if IS_MAC:
+        return _already_running_mac()
     if os.environ.get("UNIVERSE_ALLOW_MULTIPLE") == "1":
         return False
     try:
@@ -224,6 +244,14 @@ def _big_icon(hwnd):
 
 def _system_dark() -> bool:
     """Tema del sistema, para que la ventana no destelle en blanco antes de pintar la página."""
+    if IS_MAC:
+        import subprocess
+        try:
+            out = subprocess.run(["defaults", "read", "-g", "AppleInterfaceStyle"],
+                                 capture_output=True, text=True, timeout=3)
+            return out.stdout.strip().lower() == "dark"
+        except Exception:
+            return False
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
@@ -311,6 +339,29 @@ body{{display:flex;align-items:center;justify-content:center;font:14px 'Segoe UI
 @keyframes g{{to{{transform:rotate(360deg)}}}} @keyframes in{{to{{opacity:1}}}}
 </style><body><div class="w"><div class="s"></div><div>Abriendo {name}…</div></div></body></html>"""
 
+MENUS_ES = {
+    'global.quitConfirmation': '¿Seguro que quieres salir?',
+    'global.ok': 'Aceptar',
+    'global.quit': 'Salir',
+    'global.cancel': 'Cancelar',
+    'global.saveFile': 'Guardar archivo',
+    'cocoa.menu.about': 'Acerca de',
+    'cocoa.menu.services': 'Servicios',
+    'cocoa.menu.view': 'Visualización',
+    'cocoa.menu.edit': 'Edición',
+    'cocoa.menu.hide': 'Ocultar',
+    'cocoa.menu.hideOthers': 'Ocultar otros',
+    'cocoa.menu.showAll': 'Mostrar todo',
+    'cocoa.menu.quit': 'Salir',
+    'cocoa.menu.fullscreen': 'Pantalla completa',
+    'cocoa.menu.cut': 'Cortar',
+    'cocoa.menu.copy': 'Copiar',
+    'cocoa.menu.paste': 'Pegar',
+    'cocoa.menu.selectAll': 'Seleccionar todo',
+    'windows.fileFilter.allFiles': 'Todos los archivos',
+    'windows.fileFilter.otherFiles': 'Otros tipos de archivo',
+}
+
 ERROR_HTML = """<!doctype html><html lang="es"><meta charset="utf-8"><title>{name}</title>
 <body style="font:14px 'Segoe UI',system-ui,sans-serif;background:{bg};color:{fg};padding:40px;max-width:640px">
 <h2 style="font-weight:600">No se pudo iniciar {name}</h2>
@@ -326,8 +377,8 @@ def run_window() -> int:
 
     if IS_WINDOWS:
         _windows_identity()
-        if _already_running():
-            return 0
+    if _already_running():
+        return 0
 
     from src import prefs
     saved_theme = prefs.theme()
@@ -343,7 +394,7 @@ def run_window() -> int:
     if debug_port:
         webview.settings['REMOTE_DEBUGGING_PORT'] = int(debug_port)
 
-    port = _free_port()
+    port = int(os.environ.get("UNIVERSE_PORT") or 0) or _free_port()
     url = f"http://{HOST}:{port}/"
     api = Api()
     # La ventana nace con la pantalla de inicio, sin esperar al motor: crearla (WebView2) y arrancar
@@ -398,7 +449,7 @@ def run_window() -> int:
     window.events.loaded += loaded
     # private_mode=False + carpeta propia: WebView2 conserva su caché entre sesiones
     webview.start(boot, private_mode=False, storage_path=str(DATA_DIR / "interfaz"),
-                  debug=os.environ.get("UNIVERSE_UI_DEBUG") == "1")
+                  debug=os.environ.get("UNIVERSE_UI_DEBUG") == "1", localization=MENUS_ES)
     os._exit(0)   # cierra también el motor y cualquier descarga en curso
 
 
@@ -488,6 +539,11 @@ def selftest() -> int:
         if IS_WINDOWS:
             import webview  # noqa: F401  (que la ventana se pueda crear en la app empaquetada)
             lines.append("ventana: pywebview disponible")
+        if IS_MAC:
+            import AppKit  # noqa: F401
+            import WebKit  # noqa: F401
+            import webview  # noqa: F401
+            lines.append("ventana: pywebview y WebKit disponibles")
     except Exception as e:
         ok = False
         lines.append(f"ERROR: {type(e).__name__}: {e}")
@@ -501,7 +557,7 @@ def main() -> int:
     argv = sys.argv[1:]
     if "--selftest" in argv:
         return selftest()
-    if "--browser" not in argv and IS_WINDOWS:
+    if "--browser" not in argv and (IS_WINDOWS or IS_MAC):
         try:
             import webview  # noqa: F401
         except ImportError:

@@ -1,13 +1,14 @@
 
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller. En Windows lo llama build.ps1; en macOS, scripts/build.py (GitHub Actions).
+# PyInstaller. En Windows lo llama build.ps1; en macOS, .github/workflows/mac.yml (GitHub Actions).
 #
 # Windows: carpeta (onedir) -> build_out\UniverseDownloader\UniverseDownloader.exe + _internal\.
 #          Así arranca al instante (no se descomprime en cada inicio) y el instalador de Inno Setup
 #          reemplaza los archivos en cada actualización.
-# macOS:   un solo ejecutable dentro de UniverseDownloader.app, como hasta ahora.
+# macOS:   carpeta dentro de «Universe Downloader.app» (Apple Silicon).
 
 import os
+import runpy
 import sys
 from pathlib import Path
 
@@ -108,6 +109,9 @@ hiddenimports = [
 if IS_WIN:
     # ventana de escritorio: pywebview sobre Edge WebView2 (pythonnet); sus DLL las junta el hook de webview
     hiddenimports += ['webview', 'webview.platforms.winforms', 'webview.platforms.edgechromium', 'clr']
+if IS_MAC:
+    hiddenimports += ['webview', 'webview.platforms.cocoa', 'AppKit', 'Foundation', 'WebKit', 'Quartz',
+                      'Security', 'UniformTypeIdentifiers']
 
 a = Analysis(
     ['src/main.py'],
@@ -133,39 +137,42 @@ if ffmpeg_dll_names:
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 if IS_MAC:
+    version = runpy.run_path('src/version.py')
     exe = EXE(
         pyz,
         a.scripts,
-        a.binaries,
-        a.zipfiles,
-        a.datas,
         [],
+        exclude_binaries=True,
         name='UniverseDownloader',
         debug=False,
         bootloader_ignore_signals=False,
         strip=False,
         upx=False,
-        upx_exclude=[],
-        runtime_tmpdir=None,
         console=False,
         disable_windowed_traceback=False,
-        argv_emulation=True,
-        target_arch=None,
+        argv_emulation=False,
+        target_arch='arm64',
         codesign_identity=None,
         entitlements_file=None,
-        icon=exe_icon,
+        icon=icon_file,
     )
-
-    bundle_kwargs = {
-        'name': 'UniverseDownloader.app',
-        'bundle_identifier': 'com.universe.downloader',
-    }
-    if icon_file:
-        bundle_kwargs['icon'] = icon_file
-
+    coll = COLLECT(exe, a.binaries, a.zipfiles, a.datas, name='UniverseDownloader', upx=False)
     app = BUNDLE(
-        exe,
-        **bundle_kwargs,
+        coll,
+        name='Universe Downloader.app',
+        icon=icon_file,
+        bundle_identifier=version['APP_ID'],
+        version=version['APP_VERSION'],
+        info_plist={
+            'CFBundleName': version['APP_NAME'],
+            'CFBundleDisplayName': version['APP_NAME'],
+            'CFBundleShortVersionString': version['APP_VERSION'],
+            'CFBundleVersion': version['APP_VERSION'],
+            'LSMinimumSystemVersion': '13.0',
+            'LSApplicationCategoryType': 'public.app-category.utilities',
+            'NSHighResolutionCapable': True,
+            'NSRequiresAquaSystemAppearance': False,
+        },
     )
 else:
     exe = EXE(

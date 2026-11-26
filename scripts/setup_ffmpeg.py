@@ -1,6 +1,9 @@
-"""Deja FFmpeg en bin/ para empaquetarlo con la app de Windows.
+"""Deja FFmpeg en bin/ (Windows) o en mac/bin/ (macOS) para empaquetarlo con la app.
 
     python scripts/setup_ffmpeg.py
+
+macOS: la compilación estática de Martin Riedl para Apple Silicon (FFmpeg 9.1, con libx264 y
+libmp3lame), fijada por versión y suma SHA-256: ffmpeg y ffprobe no dependen de Homebrew.
 
 Se usa la compilación «shared» de BtbN (GPL, con libx264 y libmp3lame): ffmpeg.exe y ffprobe.exe
 pesan menos de 1 MB cada uno y comparten las bibliotecas (avcodec, avformat…) como DLL. La
@@ -10,6 +13,7 @@ unos 44 MB. Mismos códecs. ffplay.exe no se copia: la app no lo usa.
 
 Si en bin/ hay ejecutables estáticos de antes, se apartan en bin/estatico/ en vez de borrarlos.
 """
+import hashlib
 import io
 import shutil
 import sys
@@ -18,6 +22,12 @@ import zipfile
 from pathlib import Path
 
 BIN_DIR = Path(__file__).parent.parent / "bin"
+MAC_BIN_DIR = Path(__file__).parent.parent / "mac" / "bin"
+MAC_BUILD = "https://ffmpeg.martin-riedl.de/download/macos/arm64/1795207104_9.1"
+MAC_FILES = {
+    "ffmpeg": "1f66e9a690a7f1c9e60b012379f8869c11818d1797f45b21dbb2f2564ba61ae1",
+    "ffprobe": "6ef2df5f575042923a28537ab37adf936f28bf3e7b85de23a1447ed447ec1dbd",
+}
 FFMPEG_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip"
 STATIC_LIMIT = 50 * 1024 * 1024   # un ffmpeg.exe mayor que esto es de la compilación estática
 SKIP = {"ffplay.exe"}
@@ -65,9 +75,30 @@ def setup_ffmpeg() -> bool:
     return is_shared_build()
 
 
+def setup_ffmpeg_mac() -> bool:
+    MAC_BIN_DIR.mkdir(parents=True, exist_ok=True)
+    for name, expected in MAC_FILES.items():
+        target = MAC_BIN_DIR / name
+        if target.exists():
+            print(f"{name} ya está en {target}")
+            continue
+        url = f"{MAC_BUILD}/{name}.zip"
+        print(f"Descargando {url} ...")
+        request = urllib.request.Request(url, headers={"User-Agent": "UniverseDownloader-build"})
+        with urllib.request.urlopen(request, timeout=600) as response:
+            data = response.read()
+        if hashlib.sha256(data).hexdigest() != expected:
+            raise RuntimeError(f"la suma SHA-256 de {name}.zip no coincide")
+        with zipfile.ZipFile(io.BytesIO(data)) as archive, archive.open(name) as source, open(target, "wb") as dest:
+            shutil.copyfileobj(source, dest)
+        target.chmod(0o755)
+        print(f"{name} listo: {target} ({target.stat().st_size / 1024 / 1024:.0f} MB)")
+    return all((MAC_BIN_DIR / name).exists() for name in MAC_FILES)
+
+
 if __name__ == "__main__":
     try:
-        ok = setup_ffmpeg()
+        ok = setup_ffmpeg_mac() if sys.platform == "darwin" else setup_ffmpeg()
     except Exception as error:
         print(f"No se pudo preparar FFmpeg: {error}")
         ok = False

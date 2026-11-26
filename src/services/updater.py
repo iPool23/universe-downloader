@@ -1,8 +1,8 @@
 """Actualizaciones desde GitHub Releases.
 
 Flujo: la app consulta la última release; si es más nueva que APP_VERSION la interfaz muestra un
-aviso. Al aceptar, descarga el instalador, comprueba su SHA256 contra SHA256SUMS.txt de la misma
-release y lo ejecuta; el instalador reemplaza la app y la vuelve a abrir.
+aviso. Al aceptar, descarga el instalador (en Mac, el zip del .app), comprueba su SHA256 contra
+SHA256SUMS.txt de la misma release y lo ejecuta; el instalador reemplaza la app y la vuelve a abrir.
 
 Solo se descarga desde https://github.com/<repo>/releases/download/… y nunca sin suma verificada.
 """
@@ -10,6 +10,7 @@ Solo se descarga desde https://github.com/<repo>/releases/download/… y nunca s
 import hashlib
 import json
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -23,6 +24,7 @@ API = "https://api.github.com/repos/{repo}/releases/latest"
 DOWNLOAD_PREFIX = "https://github.com/{repo}/releases/download/"
 UA = "UniverseDownloader-updater"
 ASSET_RE = re.compile(r"^UniverseDownloader-Setup-(?P<ver>\d+(?:\.\d+)*)\.exe$")
+MAC_ASSET_RE = re.compile(r"^UniverseDownloader-(?P<ver>\d+(?:\.\d+)*)-mac-arm64\.zip$")
 SUMS_NAME = "SHA256SUMS.txt"
 MAX_BYTES = 2 * 1024 ** 3
 
@@ -36,15 +38,28 @@ def is_newer(latest, current):
     return parse_version(latest) > parse_version(current)
 
 
+def app_bundle():
+    exe = Path(sys.executable).resolve()
+    return next((p for p in exe.parents if p.suffix == ".app"), None)
+
+
 def can_install():
-    """Solo la app instalada en Windows se actualiza sola (en desarrollo se usa git; en Mac, el .dmg)."""
-    return sys.platform == "win32" and getattr(sys, "frozen", False)
+    """Solo la app instalada se actualiza sola (en desarrollo se usa git)."""
+    if not getattr(sys, "frozen", False):
+        return False
+    if sys.platform == "win32":
+        return True
+    if sys.platform == "darwin":
+        bundle = app_bundle()
+        return bool(bundle) and "/AppTranslocation/" not in str(bundle) and os.access(bundle.parent, os.W_OK)
+    return False
 
 
 def pick_asset(assets):
-    """El instalador de Windows de la release."""
+    """El archivo de la release para este sistema: el instalador de Windows o el zip del .app."""
+    pattern = MAC_ASSET_RE if sys.platform == "darwin" else ASSET_RE
     for a in assets:
-        if ASSET_RE.match(a.get("name", "")):
+        if pattern.match(a.get("name", "")):
             return a
     return None
 
@@ -70,8 +85,8 @@ def check(repo, current_version):
     asset = pick_asset(rel.get("assets", []))
     sums = next((a for a in rel.get("assets", []) if a.get("name") == SUMS_NAME), None)
     if not asset or not sums:
-        # release sin instalador verificable (por ejemplo, solo el .dmg de Mac): se avisa, pero se instala a mano
-        log.warning("release %s sin instalador de Windows o sin %s", ver, SUMS_NAME)
+        # release sin instalador verificable para este sistema: se avisa, pero se instala a mano
+        log.warning("release %s sin archivo para este sistema o sin %s", ver, SUMS_NAME)
         return info
     prefix = DOWNLOAD_PREFIX.format(repo=repo)
     urls = [asset.get("browser_download_url", ""), sums.get("browser_download_url", "")]
@@ -132,7 +147,10 @@ def run_installer(path):
 
     Un .cmd espera un par de segundos (la app se cierra sola justo después de llamar aquí),
     ejecuta el instalador mostrando solo el progreso y reabre el exe instalado.
+    En Mac un script espera a que la app cierre, cambia el .app por el del zip y la reabre.
     """
+    if sys.platform == "darwin":
+        return _mac_swap(path)
     flags = "/SILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS"
     lines = ["@echo off", "ping -n 3 127.0.0.1 >nul", f'start "" /wait "{path}" {flags}']
     if getattr(sys, "frozen", False):
@@ -141,3 +159,30 @@ def run_installer(path):
     bat.write_text("\r\n".join(lines) + "\r\n", encoding="mbcs")
     subprocess.Popen(["cmd", "/c", str(bat)], close_fds=True, cwd=str(bat.parent),
                      creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+
+
+def _mac_swap(zip_path):
+    import shlex
+    bundle = app_bundle()
+    if not bundle:
+        raise RuntimeError("no se encontró la app instalada")
+    work = Path(tempfile.mkdtemp(prefix="universe-downloader-upd-"))
+    app, old, out = shlex.quote(str(bundle)), shlex.quote(str(bundle) + ".old"), shlex.quote(str(work / "out"))
+    script = work / "actualizar.sh"
+    script.write_text(f"""#!/bin/sh
+i=0; while kill -0 {os.getpid()} 2>/dev/null && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done
+ditto -x -k {shlex.quote(str(zip_path))} {out} || exit 1
+NEW=$(find {out} -maxdepth 1 -name "*.app" | head -n 1)
+[ -n "$NEW" ] || exit 1
+codesign --verify --deep --strict "$NEW" || exit 1
+rm -rf {old}
+mv {app} {old} || exit 1
+if ! mv "$NEW" {app}; then mv {old} {app}; open {app}; exit 1; fi
+rm -rf {old}
+xattr -dr com.apple.quarantine {app} 2>/dev/null
+open {app}
+rm -rf {shlex.quote(str(work))}
+""", encoding="utf-8")
+    os.chmod(script, 0o755)
+    subprocess.Popen(["/bin/sh", str(script)], start_new_session=True, close_fds=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -79,6 +79,8 @@ FFMPEG_LOCATIONS = [
     os.path.expanduser(r'~\scoop\apps\ffmpeg\current\bin'),
     os.path.expanduser(r'~\scoop\apps\ffmpeg\current\bin'),
     os.path.expanduser(r'~\AppData\Local\Microsoft\WinGet\Links'),
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
 ]
 
 # Formatos soportados

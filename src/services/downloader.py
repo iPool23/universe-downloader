@@ -194,8 +194,11 @@ class DownloaderService:
         search_locations = [
             # Empaquetado con la app (build.ps1 lo deja en bin/)
             str(BASE_DIR / 'bin'),
+            str(BASE_DIR / 'mac' / 'bin'),
             # Default deno install
-            os.path.expanduser(r'~\.deno\bin'),
+            os.path.join(os.path.expanduser('~'), '.deno', 'bin'),
+            '/opt/homebrew/bin',
+            '/usr/local/bin',
             # WinGet install (Windows)
             *glob_mod.glob(os.path.join(
                 os.environ.get('LOCALAPPDATA', ''),
@@ -210,7 +213,7 @@ class DownloaderService:
         for location in search_locations:
             if not location or not os.path.isdir(location):
                 continue
-            deno_exe = os.path.join(location, 'deno.exe')
+            deno_exe = os.path.join(location, 'deno.exe' if os.name == 'nt' else 'deno')
             if os.path.isfile(deno_exe):
                 print(f"Deno found at: {deno_exe}")
                 os.environ["PATH"] = location + os.pathsep + os.environ.get("PATH", "")
