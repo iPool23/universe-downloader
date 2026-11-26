@@ -28,6 +28,9 @@ MAC_RESOURCES_DIR = Path(__file__).parent.parent / "mac"
 FFMPEG_EXECUTABLE_NAMES = ("ffmpeg.exe", "ffmpeg") if IS_WINDOWS else ("ffmpeg", "ffmpeg.exe")
 FFPROBE_EXECUTABLE_NAMES = ("ffprobe.exe", "ffprobe") if IS_WINDOWS else ("ffprobe", "ffprobe.exe")
 
+if IS_MAC and not os.environ.get("SSL_CERT_FILE") and os.path.isfile("/etc/ssl/cert.pem"):
+    os.environ["SSL_CERT_FILE"] = "/etc/ssl/cert.pem"
+
 
 def get_feature_flags() -> dict:
     flags = FEATURE_FLAGS.copy()
